@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240"><defs>
+    <linearGradient id="bgP" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4A4EA8"/><stop offset="100%" stop-color="#2B2A66"/>
+    </linearGradient>
+    <radialGradient id="bgPL" cx="50%" cy="22%" r="70%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity=".16"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="creamG" gradientUnits="userSpaceOnUse" x1="0" y1="38" x2="0" y2="200">
+      <stop offset="0%" stop-color="#FFFBF4"/><stop offset="60%" stop-color="#F9EDDC"/><stop offset="100%" stop-color="#EFD9BC"/>
+    </linearGradient>
+    <filter id="gsh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1" stdDeviation="0.5" flood-color="#0A0A2D" flood-opacity="0.35"/>
+      <feDropShadow dx="0" dy="3" stdDeviation="1.8" flood-color="#0A0A2D" flood-opacity="0.38"/>
+    </filter>
+    <filter id="tsh" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3.5" flood-color="#000000" flood-opacity="0.32"/>
+    </filter>
+  </defs><g id="tile-content">
+    <rect width="240" height="240" rx="54" fill="url(#bgP)"/>
+    <rect width="240" height="240" rx="54" fill="url(#bgPL)"/>
+    <rect x="1.2" y="1.2" width="237.6" height="237.6" rx="53" fill="none" stroke="#FFFFFF" stroke-opacity=".18" stroke-width="2"/>
+    <g filter="url(#gsh)" transform="translate(-24,-24) scale(1.2) rotate(-6 120 120)">
+      <rect x="95" y="42" width="50" height="88" rx="25" fill="url(#creamG)"/>
+      <path d="M73,96 L73,106 A47,47 0 0 0 167,106 L167,96" stroke="url(#creamG)" stroke-width="11" stroke-linecap="round" fill="none"/>
+      <path d="M120,153 L120,170" stroke="url(#creamG)" stroke-width="11" stroke-linecap="round"/>
+      <path d="M96,176 L144,176" stroke="url(#creamG)" stroke-width="11" stroke-linecap="round"/>
+      <path d="M100,82 Q108,73 116,82" stroke="#38378C" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+      <path d="M124,82 Q132,73 140,82" stroke="#38378C" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+      <path d="M106,98 Q120,110 134,98" stroke="#38378C" stroke-width="6" stroke-linecap="round" fill="none"/>
+    </g>
+  </g></svg>

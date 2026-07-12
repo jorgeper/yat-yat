@@ -1,6 +1,8 @@
-// Generates the base app icon and the three tray-state icons as PNGs, with no
-// image dependencies (raw RGBA -> zlib -> PNG). Run once; `npx tauri icon`
-// derives the full platform icon set from icons/base-icon.png afterwards.
+// Generates the three tray-state icons as PNGs, with no image dependencies
+// (raw RGBA -> zlib -> PNG). The APP icons come from the designed assets in
+// icon-assets/ (copied into src-tauri/icons); the tray glyph here mirrors
+// that design's microphone — same geometry as icon-assets/source/
+// yatyat_icon.svg, same -6 degree tilt, face omitted (unreadable at 22 pt).
 import { deflateSync } from "node:zlib";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -85,38 +87,41 @@ const sdCircle = (px, py, cx, cy, r) => Math.hypot(px - cx, py - cy) - r;
 const union = (...ds) => Math.min(...ds);
 const subtract = (a, b) => Math.max(a, -b);
 
-// Microphone glyph SDF centered at (cx, cy), height s.
-function micSdf(px, py, cx, cy, s, filled = true) {
-  const capW = s * 0.34;
-  const capH = s * 0.52;
-  const capsule = sdRoundRect(px, py, cx, cy - s * 0.14, capW, capH, capW / 2);
-  // Arc (U shape): ring segment below the capsule.
-  const ringOuter = sdCircle(px, py, cx, cy + s * 0.02, s * 0.31);
-  const ringInner = sdCircle(px, py, cx, cy + s * 0.02, s * 0.22);
-  let ring = subtract(ringOuter, ringInner);
-  if (py < cy + s * 0.02) ring = 1e9; // keep bottom half only
-  const stem = sdRoundRect(px, py, cx, cy + s * 0.38, s * 0.07, s * 0.16, s * 0.03);
-  const base = sdRoundRect(px, py, cx, cy + s * 0.47, s * 0.3, s * 0.06, s * 0.03);
-  const parts = union(capsule, ring, stem, base);
-  if (filled) return parts;
-  return parts;
-}
+// Distance from (px,py) to the segment (ax,ay)-(bx,by).
+const sdSegment = (px, py, ax, ay, bx, by) => {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const t = Math.max(
+    0,
+    Math.min(1, ((px - ax) * abx + (py - ay) * aby) / (abx * abx + aby * aby)),
+  );
+  return Math.hypot(px - (ax + abx * t), py - (ay + aby * t));
+};
 
-// --- App icon: dark rounded square + white mic ---
-{
-  const S = 1024;
-  const bg = (px, py) => sdRoundRect(px, py, S / 2, S / 2, S * 0.92, S * 0.92, S * 0.21);
-  const mic = (px, py) => micSdf(px, py, S / 2, S / 2, S * 0.52);
-  const rgba = draw(S, S, bg, (x, y) => {
-    // inside mic -> near-white; else deep indigo gradient
-    if (mic(x + 0.5, y + 0.5) <= 0) return [240, 243, 255];
-    const t = y / S;
-    return [24 + 18 * t, 26 + 14 * t, 44 + 36 * t];
-  });
-  // Punch nothing — mic is colored inline above.
-  mkdirSync(join(root, "src-tauri/icons"), { recursive: true });
-  writeFileSync(join(root, "src-tauri/icons/base-icon.png"), encodePng(S, S, rgba));
-  console.log("wrote src-tauri/icons/base-icon.png");
+// The Yat Yat microphone from icon-assets/source/yatyat_icon.svg, face
+// omitted, in the SVG's own 240-viewbox coordinates: capsule (95,42 50x88
+// r25), U-arc (r47 about 120,106, stroke 11, lead-ins from y=96), stem
+// (120,153-170) and base (96-144,176), all tilted -6° like the app icon.
+// Sized to fill the 44 px tray box with ~0.5 px margin.
+function yatMicSdf(px, py) {
+  const K = 0.2872; // source units -> screen px
+  const THETA = (6 * Math.PI) / 180;
+  const cos = Math.cos(THETA);
+  const sin = Math.sin(THETA);
+  // Screen -> source: un-rotate the -6° tilt about the box centre, then
+  // un-scale about the glyph's bounding-box centre.
+  const dx = px - 22;
+  const dy = py - 22;
+  const sx = (dx * cos - dy * sin) / K + 120;
+  const sy = (dx * sin + dy * cos) / K + 111.75;
+
+  const capsule = sdRoundRect(sx, sy, 120, 86, 50, 88, 25);
+  const arc = sy >= 106 ? Math.abs(Math.hypot(sx - 120, sy - 106) - 47) - 5.5 : 1e9;
+  const leadL = sdSegment(sx, sy, 73, 96, 73, 106) - 5.5;
+  const leadR = sdSegment(sx, sy, 167, 96, 167, 106) - 5.5;
+  const stem = sdSegment(sx, sy, 120, 153, 120, 170) - 5.5;
+  const base = sdSegment(sx, sy, 96, 176, 144, 176) - 5.5;
+  return K * union(capsule, arc, leadL, leadR, stem, base);
 }
 
 // --- Tray icons: 44x44. Idle/processing are monochrome (black + alpha,
@@ -130,13 +135,14 @@ function trayIcon(name, sdf, color = () => [0, 0, 0]) {
   console.log(`wrote src-tauri/resources/${name}`);
 }
 
-trayIcon("tray-idle.png", (px, py) => micSdf(px, py, 22, 21, 30));
-trayIcon(
-  "tray-recording.png",
-  (px, py) => union(micSdf(px, py, 22, 21, 30), sdCircle(px, py, 35, 9, 6)),
-  // Pixels belonging to the dot (with a little slack so the anti-aliased rim
-  // stays red) get system red; the mic glyph gets mid-gray.
-  (x, y) => (sdCircle(x + 0.5, y + 0.5, 35, 9, 6.9) <= 0 ? [255, 59, 48] : [110, 110, 115]),
+trayIcon("tray-idle.png", (px, py) => yatMicSdf(px, py));
+// Recording is template too: macOS 26 wraps the actively-recording app's
+// status item in the system's orange privacy capsule and refuses color
+// icons there (it substitutes a generic mic) — template alpha renders OUR
+// glyph white inside the capsule. The dot keeps the state readable on
+// macOS versions without the capsule.
+trayIcon("tray-recording.png", (px, py) =>
+  union(yatMicSdf(px, py), sdCircle(px, py, 36.5, 7.5, 5.5)),
 );
 trayIcon("tray-processing.png", (px, py) =>
   union(

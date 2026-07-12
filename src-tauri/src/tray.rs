@@ -156,10 +156,13 @@ pub fn set_state(app: &AppHandle, state: TrayState) {
         if let Ok(path) = icon_path(app, state) {
             if let Ok(icon) = tauri::image::Image::from_path(path) {
                 let _ = tray.set_icon(Some(icon));
-                // SPEC7 FR-T1: the recording icon carries a red dot, so it
-                // renders as-is (non-template); idle/processing stay template
-                // to adapt to the menu-bar appearance.
-                let _ = tray.set_icon_as_template(state != TrayState::Recording);
+                // All states are template icons. SPEC7 FR-T1 wanted the
+                // recording dot in color, but macOS 26 wraps the recording
+                // app's status item in the system's orange privacy capsule
+                // and substitutes a generic glyph for non-template icons —
+                // template alpha keeps OUR mic-with-dot rendering inside it
+                // (divergence noted in docs/ARCHITECTURE.md).
+                let _ = tray.set_icon_as_template(true);
             }
         }
         if let Ok(menu) = build_menu(app, state) {

@@ -177,10 +177,14 @@ new dictation (= copy + notify). History and last-transcription are recorded
 *before* the decision, so every outcome keeps the text. The confirmed paste
 re-checks nothing — the user just pointed at the target.
 
-Sound cues (`sounds.rs`, same platform-boundary pattern) and the red
-recording tray dot (`tray.rs` renders the recording state non-template) are
-the other SPEC7 surfaces; cue playback is spawn-and-forget (`afplay`), never
-on the dictation path's critical timing.
+Sound cues (`sounds.rs`, same platform-boundary pattern) and the recording
+tray dot are the other SPEC7 surfaces; cue playback is spawn-and-forget
+(`afplay`), never on the dictation path's critical timing. (Post-SPEC7
+divergence: FR-T1's red non-template dot is gone — macOS 26 wraps the
+recording app's status item in its own orange privacy capsule and
+substitutes a generic glyph for non-template icons, so all tray states are
+template now; the dot survives in the alpha and renders white inside the
+capsule.)
 
 ## Release pipeline (SPEC8)
 
