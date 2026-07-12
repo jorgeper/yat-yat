@@ -33,11 +33,15 @@ const STEP_NAMES: Record<StepId, string> = {
 async function readSnapshot(models: ModelStatus[], settings: Settings): Promise<GateSnapshot> {
   const perms = await permissions();
   const info = await api.getAppInfo();
+  // One failing check must never sink the whole snapshot (a rejected
+  // Promise.all blanked the wizard on Windows): an unverifiable fact reads
+  // as unmet and the poll keeps retrying.
+  const orFalse = (p: Promise<boolean>) => p.catch(() => false);
   const [microphone, accessibility, captureReady, trayVisible] = await Promise.all([
-    perms.checkMicrophone(),
-    perms.checkAccessibility(),
-    perms.checkCaptureReady(),
-    perms.checkTrayVisible(),
+    orFalse(perms.checkMicrophone()),
+    orFalse(perms.checkAccessibility()),
+    orFalse(perms.checkCaptureReady()),
+    orFalse(perms.checkTrayVisible()),
   ]);
   const modelReady =
     settings.active_model != null &&
@@ -89,9 +93,15 @@ export default function Onboarding({
   }, []);
 
   // Open at the frontier — or at Welcome when re-running the whole walk.
+  // A failed snapshot must never blank the wizard (the exact failure mode
+  // that shipped black on Windows): fall back to Welcome and let the poll
+  // recover.
   useEffect(() => {
     refreshSnapshot().then((snap) => {
-      if (!snap) return;
+      if (!snap) {
+        setStep("welcome");
+        return;
+      }
       setStep(startAtWelcome ? "welcome" : firstUnmetStep(snap, skipsRef.current));
     });
   }, [refreshSnapshot, startAtWelcome]);

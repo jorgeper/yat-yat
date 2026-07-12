@@ -16,9 +16,35 @@ export interface Permissions {
 }
 
 async function tauriPermissions(): Promise<Permissions> {
-  const plugin = await import("tauri-plugin-macos-permissions-api");
   const { invoke } = await import("@tauri-apps/api/core");
+  const shared = {
+    checkTrayVisible: () => invoke<boolean>("tray_item_visible"),
+    openMenuBarSettings: async () => {
+      await invoke("open_menu_bar_settings");
+    },
+    checkCaptureReady: async () => (await api.getAppInfo()).capture_ready,
+  };
+
+  // The macos-permissions plugin is only registered on macOS — calling it
+  // elsewhere rejects, which blanked the whole wizard on Windows (SPEC10
+  // fallout: readSnapshot's Promise.all never resolved).
+  const { platform } = await api.getAppInfo();
+  if (platform !== "macos") {
+    // Windows: no per-app mic prompt exists for unpackaged desktop apps
+    // (the global privacy toggle governs it — README points there), and
+    // Accessibility/menu-bar gating are macOS concepts.
+    return {
+      ...shared,
+      checkMicrophone: async () => true,
+      requestMicrophone: async () => {},
+      checkAccessibility: async () => true,
+      requestAccessibility: async () => {},
+    };
+  }
+
+  const plugin = await import("tauri-plugin-macos-permissions-api");
   return {
+    ...shared,
     checkMicrophone: () => plugin.checkMicrophonePermission(),
     requestMicrophone: async () => {
       await plugin.requestMicrophonePermission();
@@ -27,11 +53,6 @@ async function tauriPermissions(): Promise<Permissions> {
     requestAccessibility: async () => {
       await plugin.requestAccessibilityPermission();
     },
-    checkTrayVisible: () => invoke<boolean>("tray_item_visible"),
-    openMenuBarSettings: async () => {
-      await invoke("open_menu_bar_settings");
-    },
-    checkCaptureReady: async () => (await api.getAppInfo()).capture_ready,
   };
 }
 
