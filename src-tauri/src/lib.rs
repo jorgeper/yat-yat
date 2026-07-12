@@ -44,16 +44,57 @@ pub fn show_settings_window(app: &AppHandle, section: Option<&str>) {
 /// exact startup shape: invisible settings window, hidden overlay, tray
 /// only) in the application-hidden state — and Tahoe's Dock shows no tile
 /// for hidden apps. Clear the flag without stealing focus. Main thread only.
+/// macOS 26 marks a never-activated app with zero visible windows as
+/// "hidden" at the LaunchServices level (NSApp.isHidden stays false — the
+/// unhide APIs are no-ops; a non-activating panel ordered in doesn't count
+/// either — both verified via lsappinfo), and Tahoe's Dock shows no tile
+/// for such apps. Our startup is exactly that shape: invisible settings
+/// window, hidden overlay, tray only. The one lever that verifiably clears
+/// the flag is real activation — so activate at Ready and hand focus
+/// straight back. Cost: a sub-second focus blip, once, at app launch.
 #[cfg(target_os = "macos")]
-fn unhide_without_activation() {
-    use objc2::runtime::AnyObject;
-    use objc2::{class, msg_send};
-    unsafe {
-        let app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
-        if !app.is_null() {
-            let _: () = msg_send![app, unhideWithoutActivation];
-        }
+fn dock_tile_nudge(app: &AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    unsafe fn ns_app() -> *mut objc2::runtime::AnyObject {
+        use objc2::{class, msg_send};
+        unsafe { msg_send![class!(NSApplication), sharedApplication] }
     }
+
+    let app = app.clone();
+    std::thread::spawn(move || {
+        use objc2::msg_send;
+        use objc2::runtime::Bool;
+        // Let the launch sequence settle, then activate.
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        let _ = app.run_on_main_thread(|| unsafe {
+            let a = ns_app();
+            if !a.is_null() {
+                let _: () = msg_send![a, activateIgnoringOtherApps: true];
+            }
+        });
+        // Hand focus back the moment the activation is actually observed
+        // (deactivating before it lands is a no-op — measured).
+        for _ in 0..20 {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let done = Arc::new(AtomicBool::new(false));
+            let done2 = done.clone();
+            let _ = app.run_on_main_thread(move || unsafe {
+                let a = ns_app();
+                if !a.is_null() {
+                    let active: Bool = msg_send![a, isActive];
+                    if active.as_bool() {
+                        let _: () = msg_send![a, deactivate];
+                        done2.store(true, Ordering::SeqCst);
+                    }
+                }
+            });
+            if done.load(Ordering::SeqCst) {
+                break;
+            }
+        }
+    });
 }
 
 /// SPEC9 FR-U1: both menu surfaces route here — show the settings window
@@ -317,10 +358,8 @@ pub fn run() {
         .run(|_app, _event| {
             #[cfg(target_os = "macos")]
             {
-                // The Dock drops tiles for hidden apps on macOS 26; our
-                // no-visible-windows startup lands in that state.
                 if let tauri::RunEvent::Ready = &_event {
-                    unhide_without_activation();
+                    dock_tile_nudge(_app);
                 }
                 // Clicking the app's Dock icon (pinned, or during launch)
                 // while it is already running fires Reopen — open Settings.
