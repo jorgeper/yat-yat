@@ -630,10 +630,21 @@ body.overlay-body {
   padding: 12px 18px 10px;
 }
 
+/* The row is a flex ITEM of the centered pill, so without an explicit width
+   it shrink-wraps and collapses the flex-basis-0 canvas to a sliver — span
+   the full pill so the effect uses the whole width. */
 .pill-row {
   display: flex;
   align-items: center;
   gap: 12px;
+  width: 100%;
+  padding: 0 16px;
+}
+
+/* The live pill already pads its content box (and the text above aligns to
+   it) — no extra inset. */
+.pill.live .pill-row {
+  padding: 0;
 }
 
 .live-text {

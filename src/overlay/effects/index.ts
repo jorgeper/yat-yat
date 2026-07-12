@@ -12,7 +12,7 @@ import { createRadialRings } from "./radialRings";
 import { createCometTrail } from "./cometTrail";
 import { createRipplePond } from "./ripplePond";
 import { createStarfield } from "./starfield";
-import { createVuNeedle } from "./vuNeedle";
+import { createHeartbeat } from "./heartbeat";
 import { createDnaHelix } from "./dnaHelix";
 import { createFireflies } from "./fireflies";
 import { createGlitchBars } from "./glitchBars";
@@ -31,7 +31,7 @@ export const EFFECTS: EffectDef[] = [
   { id: "comet-trail", name: "Comet Trail", create: createCometTrail },
   { id: "ripple-pond", name: "Ripple Pond", create: createRipplePond },
   { id: "starfield", name: "Starfield", create: createStarfield },
-  { id: "vu-needle", name: "VU Needle", create: createVuNeedle },
+  { id: "heartbeat", name: "Heartbeat", create: createHeartbeat },
   { id: "dna-helix", name: "DNA Helix", create: createDnaHelix },
   { id: "fireflies", name: "Fireflies", create: createFireflies },
   { id: "glitch-bars", name: "Glitch Bars", create: createGlitchBars },

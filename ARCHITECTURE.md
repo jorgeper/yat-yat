@@ -130,7 +130,10 @@ The recording visualization is a canvas driven by `EffectEngine`
 interface — `init(ctx, w, h)` / `render(ctx, frame)` / `dispose()` with
 `frame = { level, levels, time, dt, colors, reducedMotion, width, height }`.
 15 built-ins live in src/overlay/effects/, one module each; the registry
-falls back to `classic-bars` on unknown ids. Rendering pauses whenever the
+falls back to `classic-bars` on unknown ids. (One post-SPEC6 swap: the
+`vu-needle` analog meter read poorly in the wide, short pill — radial shapes
+waste the horizontal canvas — so `heartbeat`, an EKG-style scrolling trace,
+replaced it; saved `vu-needle` selections fall back to the default.) Rendering pauses whenever the
 overlay is hidden (engine.stop on state change) and every renderer receives
 `reducedMotion` to calm itself.
 
