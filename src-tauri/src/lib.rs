@@ -49,14 +49,20 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
     let settings = MenuItemBuilder::with_id("app_settings", "Settings…")
         .accelerator("Cmd+,")
         .build(app)?;
-    // About panel content (SPEC8 §5): name, developer, license. The version
-    // comes from the bundle — never hardcoded here.
+    // About panel content (SPEC8 §5): name, developer, license, repo link.
+    // The version comes from the bundle — never hardcoded here. macOS renders
+    // only name/version/copyright/credits/icon, so developer, license, and
+    // the repo URL ride the credits block; authors/license/website stay set
+    // for the future Windows port, whose panel does render them.
     let about = AboutMetadataBuilder::new()
         .name(Some("Yat Yat"))
         .authors(Some(vec!["Jorge Pereira".into()]))
         .license(Some("MIT License"))
         .copyright(Some("© 2026 Jorge Pereira"))
         .website(Some("https://github.com/jorgeper/yat-yat"))
+        .credits(Some(
+            "Developer: Jorge Pereira\nMIT License\nhttps://github.com/jorgeper/yat-yat",
+        ))
         .build();
     let app_menu = SubmenuBuilder::new(app, "Yat Yat")
         .about(Some(about))
