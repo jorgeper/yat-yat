@@ -44,6 +44,9 @@ that guarantee is the product; treat any new network access as a bug.
 npm install                 # once
 npm run tauri dev           # run the app in dev mode
 npm run tauri build         # release .app + .dmg under src-tauri/target/release/bundle/
+                            # NOTE: createUpdaterArtifacts means this needs the minisign key env
+                            # (see docs/RELEASING.md "Local signed builds") or it exits 1 at the end
+                            # — the .app/.dmg are still produced before the failure.
 npm run validate            # THE gate: R → U → build → E → I suites, ends "VALIDATION: ALL PASSED"
 
 npm run test:unit           # vitest (frontend units)

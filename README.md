@@ -37,20 +37,23 @@ Verify downloads against `SHA256SUMS.txt`. All versions:
 
 ### First launch on macOS
 
-Alpha builds aren't signed or notarized yet, so the first open is blocked
-with *“Apple could not verify 'Yat Yat' is free of malware.”* Click **Done**
-(not Move to Trash!), then:
-
-**System Settings → Privacy & Security → scroll down to
-*“Yat Yat” was blocked…* → Open Anyway.**
-
-Terminal alternative:
+Alpha builds aren't Developer-ID-signed or notarized yet, so Gatekeeper
+blocks the first open of a downloaded copy — depending on your macOS
+version the dialog says *“Apple could not verify 'Yat Yat' is free of
+malware”* or even *“'Yat Yat' is damaged and can't be opened”*. **Neither
+means the download is broken** — it's Gatekeeper's wording for unsigned
+apps. Click **Cancel/Done** (not Move to Trash!), then clear the
+quarantine flag:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/Yat Yat.app"
 ```
 
-It's a one-time step. The app then walks you through the
+(or, when your macOS offers it: System Settings → Privacy & Security →
+scroll to *“Yat Yat” was blocked…* → **Open Anyway**.)
+
+It's a one-time step per download; in-app updates
+([Updates](#updates)) don't go through the browser, so they never hit it. The app then walks you through the
 [permissions it needs](#permissions-macos) (microphone + Accessibility) and
 your first model download. **Updating from a previous alpha:** unsigned
 builds re-key the Accessibility grant — the app notices and walks you

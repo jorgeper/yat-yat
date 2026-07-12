@@ -150,7 +150,7 @@ jobs:
 
           | Asset | What it is |
           | --- | --- |
-          | `Yat.Yat_*_aarch64.dmg` | macOS app (Apple Silicon). Unsigned — Gatekeeper will refuse it at first: System Settings → Privacy & Security → **Open Anyway**, or `xattr -dr com.apple.quarantine "/Applications/Yat Yat.app"`. |
+          | `Yat.Yat_*_aarch64.dmg` | macOS app (Apple Silicon). Unsigned — Gatekeeper blocks the first open ("could not verify" or even "damaged"; the file is fine). Fix: `xattr -dr com.apple.quarantine "/Applications/Yat Yat.app"`, or System Settings → Privacy & Security → **Open Anyway** where offered. |
           | `Yat.Yat_*_aarch64.app.tar.gz` (+ `.sig`) | Consumed by **Check for Updates…** inside the app — not for manual installs. |
           | `latest.json` | The updater manifest for this version. |
           | `SHA256SUMS.txt` | Checksums for the assets above. |
