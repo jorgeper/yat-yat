@@ -2,8 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Yat Yat is a fully-local voice-dictation menu-bar app for macOS (Tauri 2:
-Rust host + React/TS frontend). Hotkey → record → local STT → deterministic
+Yat Yat is a fully-local voice-dictation app for macOS (Tauri 2: Rust host +
+React/TS frontend) — a menu-bar icon for dictation plus a regular Dock
+presence (Dock click opens Settings). Hotkey → record → local STT → deterministic
 cleanup → paste at cursor. **Nothing may ever touch the network** except
 user-initiated model downloads and the localhost-only enhancement endpoint —
 that guarantee is the product; treat any new network access as a bug.

@@ -56,7 +56,7 @@ platform-specific seams, each isolated in one place:
 | Paste keystroke | `paste.rs::send_paste_keystroke`: ⌘ + kVK 9 | same fn, `cfg(windows)` arm: Ctrl + VK 0x56 (already written) |
 | Hotkey backend | handy-keys event tap (Accessibility) | handy-keys `WH_KEYBOARD_LL` hook (no permission needed) — same API |
 | Permissions | `tauri-plugin-macos-permissions` + onboarding step | step is skipped on non-mac (`Onboarding.tsx` builds the step list per platform) |
-| Menu-bar-only | `Info.plist` `LSUIElement` | `skipTaskbar` on windows + tray only |
+| Dock + tray app | regular activation (LSUIElement dropped post-SPEC8 by owner preference; Dock click → Reopen → Settings) | standard taskbar presence + tray |
 | Frontmost app (focus guard) | `focus.rs`: NSWorkspace via main thread | same fn, `GetForegroundWindow` + process name; stub currently returns `None` (guard off) |
 | Sound cues | `sounds.rs`: spawn `afplay` | same fn, `PlaySoundW` with `SND_ASYNC`; stub currently no-op |
 | Whisper accel | `whisper-metal` feature | swap to `whisper-vulkan` feature in Cargo target table |

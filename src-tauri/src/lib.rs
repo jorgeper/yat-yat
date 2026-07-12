@@ -40,6 +40,22 @@ pub fn show_settings_window(app: &AppHandle, section: Option<&str>) {
     }
 }
 
+/// macOS 26 leaves a never-activated app whose windows are all hidden (our
+/// exact startup shape: invisible settings window, hidden overlay, tray
+/// only) in the application-hidden state — and Tahoe's Dock shows no tile
+/// for hidden apps. Clear the flag without stealing focus. Main thread only.
+#[cfg(target_os = "macos")]
+fn unhide_without_activation() {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    unsafe {
+        let app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
+        if !app.is_null() {
+            let _: () = msg_send![app, unhideWithoutActivation];
+        }
+    }
+}
+
 /// SPEC9 FR-U1: both menu surfaces route here — show the settings window
 /// and hand off to its Check for Updates dialog.
 pub fn open_update_check(app: &AppHandle) {
@@ -242,9 +258,8 @@ pub fn run() {
                 });
             }
 
-            // First run: bring the wizard to the foreground. LSUIElement apps
-            // don't activate on launch, so an unfocused window opens BEHIND
-            // whatever the user is doing and looks like nothing happened.
+            // First run: bring the wizard to the foreground so it never opens
+            // unfocused behind whatever the user is doing.
             if onboarding_needed {
                 if let Some(window) = handle.get_webview_window(SETTINGS_LABEL) {
                     let _ = window.show();
@@ -300,12 +315,18 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building yat-yat")
         .run(|_app, _event| {
-            // Clicking the app's Dock icon (pinned, or during launch) while
-            // it is already running fires Reopen — open Settings, the only
-            // user-facing window of this menu-bar app.
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = &_event {
-                show_settings_window(_app, None);
+            {
+                // The Dock drops tiles for hidden apps on macOS 26; our
+                // no-visible-windows startup lands in that state.
+                if let tauri::RunEvent::Ready = &_event {
+                    unhide_without_activation();
+                }
+                // Clicking the app's Dock icon (pinned, or during launch)
+                // while it is already running fires Reopen — open Settings.
+                if let tauri::RunEvent::Reopen { .. } = &_event {
+                    show_settings_window(_app, None);
+                }
             }
         });
 }

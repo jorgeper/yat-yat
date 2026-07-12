@@ -4,7 +4,8 @@
 <dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>Yat Yat records your voice while the dictation hotkey is active so it can transcribe it — entirely on this Mac.</string>
-    <key>LSUIElement</key>
-    <true/>
+    <!-- LSUIElement was dropped post-SPEC8 by owner preference: Yat Yat is
+         a regular Dock app now (Dock click opens Settings via the Reopen
+         handler); the menu-bar icon remains the dictation surface. -->
 </dict>
 </plist>

@@ -32,7 +32,10 @@ jobs:
           gh release download "$TAG" --pattern latest.json --dir manifest || {
             echo "::warning::$TAG has no latest.json (pre-SPEC9 release?) — nothing to advance"; exit 0; }
           if ! gh release view updater > /dev/null 2>&1; then
-            gh release create updater --latest=false \
+            # --prerelease so GitHub never auto-designates this machine-consumed
+            # pointer as the repo's "latest release" (all real releases are
+            # prereleases during alpha, so it would win by default otherwise).
+            gh release create updater --latest=false --prerelease \
               --title "Updater manifest (rolling)" \
               --notes "Machine-consumed pointer for Check for Updates… — always mirrors the newest PUBLISHED release's latest.json. Not for humans; grab the newest release instead."
           fi
