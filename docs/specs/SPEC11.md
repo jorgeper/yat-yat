@@ -1,12 +1,16 @@
-# SPEC11: Yat Yat — Uninstall (leave nothing behind)
+# SPEC11: Yat Yat — Uninstall, sound-cues default, and three easter eggs
 
 An increment over docs/specs/SPEC.md–SPEC10.md (authoritative elsewhere).
-Deleting the .app leaves everything the app ever created: settings, history,
-**the downloaded models (up to ~2 GB)**, TCC grants, preferences, WebKit
-storage, caches, saved state, and the login item. `scripts/deep-clean.sh`
-scrubs all of it for developers; end users get nothing. This spec ships a
-user-facing **Uninstall Yat Yat…** that removes everything removable,
-itemized and consented, then puts the app itself in the Trash.
+Two halves. First: deleting the .app leaves everything the app ever created
+— settings, history, **the downloaded models (up to ~2 GB)**, TCC grants,
+preferences, WebKit storage, caches, saved state, the login item.
+`scripts/deep-clean.sh` scrubs all of it for developers; end users get
+nothing. This spec ships a user-facing **Uninstall Yat Yat…** that removes
+everything removable, itemized and consented, then puts the app itself in
+the Trash. Second: **delight** — sound cues turn on by default, and three
+easter eggs land. Iron rule for every egg: **cosmetic only** — none may
+ever touch recording, transcription, cleanup, or paste behavior, and all
+motion respects prefers-reduced-motion.
 
 Out of scope: uninstall telemetry/surveys (never), removing the two things
 macOS offers no API for (the Menu Bar allowance toggle and a user's Dock
@@ -69,33 +73,89 @@ each failure logged — an uninstall must never strand the user half-way):
 3. `formatBytes` (pure, `src/lib/format.ts`) renders sizes — **U15** covers
    it (B/KB/MB/GB boundaries, 0, rounding).
 
-## 4. Tests (added: R15, U15, E16a–E16b)
+## 4. Sound cues on by default (FR-S)
+
+`sound_cues` defaults to **true** (Settings::default, defaultSettings(),
+and the mock). Users who already persisted `false` keep it — serde defaults
+only fill missing fields; no migration. Sanctioned test amendments for this
+(and ONLY this): `r13_legacy_json_defaults_new_fields` flips its
+sound_cues assertion to default-ON, and **E14b** asserts the sound-cues
+toggle starts checked. Nothing else about either test changes.
+
+## 5. Easter eggs (FR-E)
+
+1. **"Yat yat" wiggle.** While recording with live transcription, if the
+   RAW stream text (pre-cleanup — the collapse hasn't eaten it yet at this
+   stage, which is the joke) matches `/yat[\s,.!?]*yat/i`, the pill plays a
+   ~600 ms bounce/wiggle (class `pill-wiggle`, removed on animationend).
+   At most one wiggle per new match count per recording. Reduced motion: no
+   wiggle. Detection is a pure helper (`src/lib/eggs.ts: yatYatMatches`).
+2. **Konami code → hidden 13th theme.** In the settings window,
+   ↑↑↓↓←→←→BA (pure detector `konamiProgress` in eggs.ts) toggles the
+   secret theme **"Yat95"** — Windows-95 gray: `#c0c0c0` pill, navy text,
+   beveled-border look, system-ish font. It lives OUTSIDE the built-in
+   registry (id `secret:yat95`, its CSS in `src/overlay/secretTheme.ts`)
+   so U9's exactly-12 contract is untouched and it never appears in the
+   Appearance picker; `applyTheme`/the preview resolve the secret id
+   before the built-in fallback. Activating persists
+   `overlay_theme: "secret:yat95"` (with a small unlock toast in whatever
+   section is open, testid `egg-toast`); the same code toggles back to the
+   previous theme. Picking any normal theme simply replaces it.
+3. **Sleepy waveform.** If the recording pill has shown no speech for
+   **20 s** (level below 0.06 continuously — tracked by a pure
+   `SleepTracker` in eggs.ts, threshold/duration exported), the pill gains
+   `pill-asleep`: the effect canvas slumps (CSS squash/dim — the engine
+   keeps running untouched) and a 💤 (`sleep-zzz`) drifts upward on loop.
+   ANY level above threshold wakes it instantly. Recording, live passes,
+   timer, and the stop path are completely unaffected — asleep is CSS
+   only. Reduced motion: 💤 static, no drift.
+
+## 6. Tests (added: R15, U15–U17, E16a–E16b, E17a–E17c)
 
 - **R15**: the plan function (§1.2).
 - **U15**: `formatBytes`.
+- **U16**: eggs — `yatYatMatches` (matches with space/comma/period between,
+  case-insensitive, no false positive on single "yat"), `konamiProgress`
+  (full sequence fires, wrong key resets, prefix re-entry), and the Yat95
+  CSS defines the full 11-variable theme contract.
+- **U17**: `SleepTracker` — sleeps only after the full window below
+  threshold, any loud sample resets, wake is instant, tracker is pure
+  (injected clock).
 - **E16a**: General shows the Danger-zone row; opening lists the mocked
   plan items with sizes; toggling keep-data refetches and drops the
   app-data row; confirm calls `uninstall_app` with the flag.
 - **E16b**: cancel closes the dialog with NO `uninstall_app` call and
   settings remain fully functional.
-- No existing test may be modified, weakened, or deleted.
+- **E17a**: overlay in live recording; stream-text containing "yat yat" →
+  `pill-wiggle` appears (and clears); plain text never wiggles.
+- **E17b**: typing the Konami sequence in settings persists
+  `overlay_theme: "secret:yat95"` via set_settings and shows `egg-toast`;
+  typing it again restores the prior theme; the Appearance picker still
+  shows exactly 12 swatches throughout.
+- **E17c**: with Playwright's clock API, a recording overlay fed silence
+  for 20 virtual seconds gains `pill-asleep` + `sleep-zzz`; one loud
+  mic-level removes it immediately.
+- Sanctioned amendments: ONLY the two named in §4. Nothing else may be
+  modified, weakened, or deleted.
 
-## 5. Docs
+## 7. Docs
 
 README: an **Uninstalling** section (the in-app path, what's removed, the
 two manual leftovers, Windows = Add/Remove Programs); the "Full reset"
-dev section points at it. docs/ARCHITECTURE.md: one paragraph — plan
-purity, best-effort execution order, trash-not-delete, deep-clean.sh
-parity.
+dev section points at it; the sound-cues mention flips to "on by default".
+Easter eggs are NOT documented in README (they're eggs).
+docs/ARCHITECTURE.md: one paragraph — plan purity, best-effort execution
+order, trash-not-delete, deep-clean.sh parity; one line noting eggs are
+cosmetic-only with pure helpers in src/lib/eggs.ts.
 
-## 6. Definition of Done
+## 8. Definition of Done
 
-1. `npm run validate` exits 0 with complete output — R1–R15, U1–U15,
-   E1–E16b, I1–I2, `VALIDATION: ALL PASSED` — printed in the transcript.
+1. `npm run validate` exits 0 with complete output — R1–R15, U1–U17,
+   E1–E17c, I1–I2, `VALIDATION: ALL PASSED` — printed in the transcript.
 2. `npm run tauri build` (signed env) exits 0; app size still < 80 MB.
 3. `cargo check --target x86_64-pc-windows-msvc` clean via CI's
    test-windows job on the pushed commit (or cargo-xwin locally).
-4. README + ARCHITECTURE updated per §5; `npm run licenses` green (the
+4. README + ARCHITECTURE updated per §7; `npm run licenses` green (the
    trash crate, if one is added, must pass the allowlist);
    `grep -rn ".skip\|.only\|.todo" tests/` prints nothing.
 5. Anything infeasible → BLOCKERS.md; never game a check.
