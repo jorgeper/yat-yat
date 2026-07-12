@@ -86,17 +86,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: Install Vulkan SDK (whisper.cpp vulkan backend)
-        shell: pwsh
-        run: |
-          $ver = "1.3.296.0"
-          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$ver/windows/VulkanSDK-$ver-Installer.exe" -OutFile vulkan-sdk.exe
-          Start-Process .\vulkan-sdk.exe -ArgumentList '--accept-licenses','--default-answer','--confirm-command','install' -Wait
-          "VULKAN_SDK=C:\VulkanSDK\$ver" >> $env:GITHUB_ENV
-          "C:\VulkanSDK\$ver\Bin" >> $env:GITHUB_PATH
-      # ggml-vulkan's shader-gen ExternalProject rules break under CMake's
-      # MSBuild generator (case-insensitive path dedup -> "cannot be built in
-      # parallel"); Ninja + the MSVC dev env is the known-good combination.
+      # Whisper on Windows is CPU-only for now (ggml's vulkan-shaders-gen
+      # cannot build under the MSVC release profile in CI — BLOCKERS.md);
+      # Ninja stays: MSBuild breaks ggml's ExternalProject rules regardless.
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Build native deps with Ninja
         shell: pwsh
@@ -155,17 +147,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: Install Vulkan SDK (whisper.cpp vulkan backend)
-        shell: pwsh
-        run: |
-          $ver = "1.3.296.0"
-          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$ver/windows/VulkanSDK-$ver-Installer.exe" -OutFile vulkan-sdk.exe
-          Start-Process .\vulkan-sdk.exe -ArgumentList '--accept-licenses','--default-answer','--confirm-command','install' -Wait
-          "VULKAN_SDK=C:\VulkanSDK\$ver" >> $env:GITHUB_ENV
-          "C:\VulkanSDK\$ver\Bin" >> $env:GITHUB_PATH
-      # ggml-vulkan's shader-gen ExternalProject rules break under CMake's
-      # MSBuild generator (case-insensitive path dedup -> "cannot be built in
-      # parallel"); Ninja + the MSVC dev env is the known-good combination.
+      # Whisper on Windows is CPU-only for now (ggml's vulkan-shaders-gen
+      # cannot build under the MSVC release profile in CI — BLOCKERS.md);
+      # Ninja stays: MSBuild breaks ggml's ExternalProject rules regardless.
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Build native deps with Ninja
         shell: pwsh

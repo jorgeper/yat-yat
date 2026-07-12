@@ -73,8 +73,9 @@ expect rougher edges than on macOS. The installer is unsigned, so
 SmartScreen objects once: **More info → Run anyway**. No Accessibility-style
 permission exists on Windows — the hotkey and paste work out of the box; if
 the microphone is blocked, enable it under Settings → Privacy & security →
-Microphone. Whisper uses Vulkan GPU acceleration when a device is available
-and falls back to CPU otherwise.
+Microphone. Inference currently runs on CPU on Windows (GPU/Vulkan
+acceleration is blocked on an upstream build issue — see BLOCKERS.md);
+smaller models like Whisper Tiny/Small and Parakeet stay comfortably fast.
 
 ## How it works
 

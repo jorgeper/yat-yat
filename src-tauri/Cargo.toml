@@ -53,9 +53,10 @@ handy-keys = "0.3"
 transcribe-rs = { version = "=0.3.11", features = ["onnx", "whisper-cpp"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-# SPEC10: Vulkan-accelerated whisper on Windows (whisper.cpp falls back to
-# CPU at runtime when no Vulkan device exists).
-transcribe-rs = { version = "=0.3.11", features = ["onnx", "whisper-cpp", "whisper-vulkan"] }
+# SPEC10 wanted whisper-vulkan here, but ggml's nested vulkan-shaders-gen
+# ExternalProject cannot build under the MSVC release profile in CI (see
+# BLOCKERS.md) — Windows ships CPU whisper for now; the feature swap remains
+# a one-line seam once upstream fixes land.
 # Frontmost-window query (focus guard) + PlaySoundW (sound cues).
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",

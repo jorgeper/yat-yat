@@ -59,7 +59,7 @@ platform-specific seams, each isolated in one place:
 | Dock + tray app | regular activation (LSUIElement dropped post-SPEC8 by owner preference; Dock click → Reopen → Settings) | standard taskbar presence + tray |
 | Frontmost app (focus guard) | `focus.rs`: NSWorkspace via main thread | **implemented (SPEC10)**: `GetForegroundWindow` → exe path, compared lowercased (`windows_exe_key`, R14); every failure is `None` — guard fails open |
 | Sound cues | `sounds.rs`: spawn `afplay` | **implemented (SPEC10)**: `PlaySoundW` (`SND_SYNC` on a worker thread so the buffer outlives playback) |
-| Whisper accel | `whisper-metal` feature | **implemented (SPEC10)**: `whisper-vulkan` in the Windows target table; whisper.cpp falls back to CPU without a Vulkan device |
+| Whisper accel | `whisper-metal` feature | CPU for now — `whisper-vulkan` blocked on an upstream ggml release-profile build bug (BLOCKERS.md §3); re-enabling is a one-line feature swap |
 
 Remaining Windows work is packaging (MSI/NSIS via `tauri build`), not code.
 

@@ -24,3 +24,22 @@
    manual checks (listed in GOAL.md). The perf probe measures the overlay
    show path (0.29 ms), which is the app-controlled portion of the < 150 ms
    budget.
+
+3. **SPEC10: Windows whisper-vulkan does not build in CI (release profile).**
+   Attempted per SPEC10 §1: `whisper-vulkan` in the Windows target table +
+   Vulkan SDK 1.3.296 on windows-latest. Two failure layers were fixed or
+   isolated with evidence:
+   - CMake's MSBuild generator refuses ggml-vulkan's `vulkan-shaders-gen`
+     ExternalProject rule chain ("items cannot be built in parallel",
+     case-insensitive path dedup) — fixed by switching native builds to
+     Ninja + the MSVC dev env (this fix is kept; MSBuild breaks regardless
+     of Vulkan).
+   - Under the **release** profile only, the nested shader-gen try-compile
+     then dies with MSVC `C1083: Cannot open compiler generated file: '':
+     Invalid argument` (debug builds of the same target succeed — proven by
+     the green test-windows job on run 29200844825; release failed on the
+     same commit).
+   Verdict: upstream ggml/whisper-rs-sys toolchain bug, not fixable from
+   this repo without patching the vendored build. Windows ships **CPU
+   whisper** for the alpha (fully functional, slower); re-enabling is the
+   one-line feature swap in `src-tauri/Cargo.toml` once upstream fixes land.
