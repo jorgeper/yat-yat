@@ -40,6 +40,44 @@ pub fn show_settings_window(app: &AppHandle, section: Option<&str>) {
     }
 }
 
+/// The macOS application menu (top-left of the menu bar while a Yat Yat
+/// window is focused). Replaces Tauri's default so it carries a Settings…
+/// item (⌘,); Edit stays for clipboard shortcuts in the settings fields.
+#[cfg(target_os = "macos")]
+fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{Menu, MenuItemBuilder, SubmenuBuilder};
+    let settings = MenuItemBuilder::with_id("app_settings", "Settings…")
+        .accelerator("Cmd+,")
+        .build(app)?;
+    let app_menu = SubmenuBuilder::new(app, "Yat Yat")
+        .about(None)
+        .separator()
+        .item(&settings)
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+    let edit = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+    let window = SubmenuBuilder::new(app, "Window")
+        .minimize()
+        .close_window()
+        .build()?;
+    Menu::with_items(app, &[&app_menu, &edit, &window])
+}
+
 fn create_settings_window(app: &AppHandle, visible: bool) -> tauri::Result<()> {
     WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App("index.html".into()))
         .title("Yat Yat")
@@ -159,6 +197,18 @@ pub fn run() {
             create_settings_window(&handle, onboarding_needed)?;
             tray::create(&handle)?;
 
+            // Application menu with Settings… (⌘,). Tray menu ids are
+            // disjoint, so this global handler ignores tray events.
+            #[cfg(target_os = "macos")]
+            {
+                handle.set_menu(build_app_menu(&handle)?)?;
+                handle.on_menu_event(|app, event| {
+                    if event.id().as_ref() == "app_settings" {
+                        show_settings_window(app, None);
+                    }
+                });
+            }
+
             // First run: bring the wizard to the foreground. LSUIElement apps
             // don't activate on launch, so an unfocused window opens BEHIND
             // whatever the user is doing and looks like nothing happened.
@@ -214,6 +264,15 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running yat-yat");
+        .build(tauri::generate_context!())
+        .expect("error while building yat-yat")
+        .run(|_app, _event| {
+            // Clicking the app's Dock icon (pinned, or during launch) while
+            // it is already running fires Reopen — open Settings, the only
+            // user-facing window of this menu-bar app.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = &_event {
+                show_settings_window(_app, None);
+            }
+        });
 }
