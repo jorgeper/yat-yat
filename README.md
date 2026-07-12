@@ -18,7 +18,7 @@ whatever app has focus.
   on Apple Silicon; the active model stays warm-loaded between dictations.
 - **Simple.** One hotkey, one overlay, one menu-bar icon.
 
-> **⚠️ Alpha** — Yat Yat is pre-release software (`0.1.0-alpha.2`).
+> **⚠️ Alpha** — Yat Yat is pre-release software (`0.1.0-alpha.3`).
 > Builds are unsigned, formats may still shift, expect rough edges.
 
 ## Download
