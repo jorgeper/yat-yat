@@ -143,7 +143,10 @@ toggle starts checked. Nothing else about either test changes.
 README: an **Uninstalling** section (the in-app path, what's removed, the
 two manual leftovers, Windows = Add/Remove Programs); the "Full reset"
 dev section points at it; the sound-cues mention flips to "on by default".
-Easter eggs are NOT documented in README (they're eggs).
+Easter eggs are documented in **docs/EASTER-EGGS.md** (what each egg is
+and how to trigger it, with the same wink the features have), linked from
+README with a single teaser line ("Yat Yat has secrets — spoilers in
+docs/EASTER-EGGS.md"); the APP itself never documents or hints at them.
 docs/ARCHITECTURE.md: one paragraph — plan purity, best-effort execution
 order, trash-not-delete, deep-clean.sh parity; one line noting eggs are
 cosmetic-only with pure helpers in src/lib/eggs.ts.
@@ -152,13 +155,15 @@ cosmetic-only with pure helpers in src/lib/eggs.ts.
 
 1. `npm run validate` exits 0 with complete output — R1–R15, U1–U17,
    E1–E17c, I1–I2, `VALIDATION: ALL PASSED` — printed in the transcript.
-2. `npm run tauri build` (signed env) exits 0; app size still < 80 MB.
-3. `cargo check --target x86_64-pc-windows-msvc` clean via CI's
-   test-windows job on the pushed commit (or cargo-xwin locally).
-4. README + ARCHITECTURE updated per §7; `npm run licenses` green (the
+2. `npm run tauri build` (signed env) exits 0; app size still < 80 MB —
+   **macOS first**: this spec's DoD is fully local for a fast test-iterate
+   loop; the Windows compile is verified by the release pipeline's
+   test-windows job at the next cut, not gated here.
+3. README + docs/EASTER-EGGS.md + ARCHITECTURE updated per §7;
+   `npm run licenses` green (the
    trash crate, if one is added, must pass the allowlist);
    `grep -rn ".skip\|.only\|.todo" tests/` prints nothing.
-5. Anything infeasible → BLOCKERS.md; never game a check.
+4. Anything infeasible → BLOCKERS.md; never game a check.
 
 Manual checks after green (a scratch install, not your daily one): run the
 in-app uninstall with models downloaded — app lands in Trash, app-support
