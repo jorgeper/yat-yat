@@ -24,7 +24,7 @@ whatever app has focus.
   <a href="docs/screenshots/pill-vaporwave-mirror.png"><img src="docs/screenshots/pill-vaporwave-mirror.png" width="32%" alt="The pill in the Vaporwave theme with the Mirror Wave visualizer"></a>
 </p>
 
-> **⚠️ Alpha** — Yat Yat is pre-release software (`0.1.0-alpha.3`).
+> **⚠️ Alpha** — Yat Yat is pre-release software (`0.1.0-alpha.4`).
 > Builds are unsigned, formats may still shift, expect rough edges.
 
 ## Download
