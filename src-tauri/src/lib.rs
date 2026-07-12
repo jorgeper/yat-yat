@@ -45,12 +45,21 @@ pub fn show_settings_window(app: &AppHandle, section: Option<&str>) {
 /// item (⌘,); Edit stays for clipboard shortcuts in the settings fields.
 #[cfg(target_os = "macos")]
 fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    use tauri::menu::{Menu, MenuItemBuilder, SubmenuBuilder};
+    use tauri::menu::{AboutMetadataBuilder, Menu, MenuItemBuilder, SubmenuBuilder};
     let settings = MenuItemBuilder::with_id("app_settings", "Settings…")
         .accelerator("Cmd+,")
         .build(app)?;
+    // About panel content (SPEC8 §5): name, developer, license. The version
+    // comes from the bundle — never hardcoded here.
+    let about = AboutMetadataBuilder::new()
+        .name(Some("Yat Yat"))
+        .authors(Some(vec!["Jorge Pereira".into()]))
+        .license(Some("MIT License"))
+        .copyright(Some("© 2026 Jorge Pereira"))
+        .website(Some("https://github.com/jorgeper/yat-yat"))
+        .build();
     let app_menu = SubmenuBuilder::new(app, "Yat Yat")
-        .about(None)
+        .about(Some(about))
         .separator()
         .item(&settings)
         .separator()

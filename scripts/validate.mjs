@@ -17,7 +17,7 @@ const steps = [
     cwd: join(root, "src-tauri"),
   },
   {
-    name: "Frontend unit tests (U1–U11)",
+    name: "Frontend unit tests (U1–U13)",
     cmd: "npx vitest run --reporter=verbose",
     cwd: root,
   },

@@ -180,6 +180,27 @@ recording tray dot (`tray.rs` renders the recording state non-template) are
 the other SPEC7 surfaces; cue playback is spawn-and-forget (`afplay`), never
 on the dictation path's critical timing.
 
+## Release pipeline (SPEC8)
+
+The app version lives in exactly three files — `package.json`,
+`src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` — moved only in
+lock-step by `npm run release:prepare -- <semver>` (pure rewrite transforms,
+U12-tested; pre-release ids like `-alpha.1` are never stripped; lockfiles
+refresh alongside). Tags mirror the files.
+
+`.github/workflows/release.yml` topology: a tag push (`v*`) or a
+`workflow_dispatch` dry-run → **test** (macos-latest: version-drift check,
+then the full `npm run validate` gate, with the I1 model cached via
+actions/cache) → **build-macos** (Apple Silicon dmg) → **release** (checksum
+file + one **draft** GitHub Release, exactly two assets, 80 MB guard).
+Publishing is always a human flipping `--draft=false` after smoke-testing —
+see docs/RELEASING.md.
+
+Licensing guard: `npm run licenses` regenerates THIRD-PARTY-NOTICES.md from
+`package-lock.json` + `cargo metadata` and fails on any license outside the
+permissive allowlist (U13-tested, including the tauri-nspanel
+missing-metadata override) — copyleft can't enter the bundle unnoticed.
+
 ## Design notes
 
 - **One pipeline thread** serializes Idle→Recording→Processing, so double

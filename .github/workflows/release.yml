@@ -1,0 +1,144 @@
+# Yat Yat release pipeline (SPEC8 §2): tag push (v*) or manual dispatch →
+# full validate gate + version check → macOS build → one draft GitHub Release
+# with exactly two assets (dmg, SHA256SUMS.txt). Nothing auto-publishes; a
+# human smoke-tests the draft and flips it live (see docs/RELEASING.md).
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to dry-run (e.g. 0.2.0-alpha.2); produces a draft prerelease'
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      # I1's one-time Whisper-tiny download is the harness's only sanctioned
+      # network; cache it so reruns stay offline and quick.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/yatyat-validate
+          key: yatyat-validate-model-v1
+      - name: Resolve release version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Version check (no silent drift)
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          fail=0
+          for f in package.json src-tauri/tauri.conf.json; do
+            got=$(node -p "JSON.parse(require('fs').readFileSync('$f','utf8')).version")
+            if [ "$got" != "$v" ]; then echo "::error::$f has $got, releasing $v"; fail=1; fi
+          done
+          got=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
+          if [ "$got" != "$v" ]; then echo "::error::src-tauri/Cargo.toml has $got, releasing $v"; fail=1; fi
+          exit $fail
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run validate
+
+  build-macos:
+    runs-on: macos-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      # Apple Silicon only for the alpha (SPEC8 §2.2) — the universal/Intel
+      # build of the ONNX + whisper.cpp stack is a documented seam.
+      - run: npm run tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [test, build-macos]
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.test.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Asset guard (exactly one dmg, under 80 MB)
+        run: |
+          cd release-assets
+          ls -l
+          [ "$(ls *.dmg 2>/dev/null | wc -l)" -eq 1 ] || { echo "::error::expected exactly one dmg"; exit 1; }
+          for f in *; do
+            size=$(wc -c < "$f")
+            if [ "$size" -gt 83886080 ]; then echo "::error::$f is $size bytes (> 80 MB)"; exit 1; fi
+          done
+      - name: Checksums
+        run: |
+          cd release-assets
+          # GitHub rewrites spaces in asset filenames to dots on upload; rename
+          # first so SHA256SUMS.txt matches what users actually download.
+          for f in *\ *; do [ -e "$f" ] && mv "$f" "${f// /.}"; done
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Release notes header
+        run: |
+          cat > NOTES.md <<'EOF'
+          **Alpha preview — unsigned builds, expect rough edges.**
+
+          | Asset | What it is |
+          | --- | --- |
+          | `Yat.Yat_*_aarch64.dmg` | macOS app (Apple Silicon). Unsigned — Gatekeeper will refuse it at first: System Settings → Privacy & Security → **Open Anyway**, or `xattr -dr com.apple.quarantine "/Applications/Yat Yat.app"`. |
+          | `SHA256SUMS.txt` | Checksums for the asset above. |
+
+          First run walks you through the microphone and Accessibility
+          permissions. **Updating from a previous alpha:** unsigned builds
+          re-key the Accessibility grant — the app will ask you to re-grant
+          it and walks you through the fix.
+          EOF
+      - name: Create draft release
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            gh release create "$GITHUB_REF_NAME" --draft --generate-notes \
+              --title "Yat Yat $VERSION" --notes-file NOTES.md \
+              release-assets/*.dmg release-assets/SHA256SUMS.txt
+          else
+            gh release create "v$VERSION" --draft --prerelease --target "$GITHUB_SHA" \
+              --title "Yat Yat $VERSION" --notes-file NOTES.md \
+              release-assets/*.dmg release-assets/SHA256SUMS.txt
+          fi
