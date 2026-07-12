@@ -16,6 +16,8 @@ ggml conversions). See docs/license.md.
 | --- | --- | --- |
 | @tauri-apps/api | 2.11.1 | Apache-2.0 OR MIT |
 | @tauri-apps/plugin-autostart | 2.5.1 | MIT OR Apache-2.0 |
+| @tauri-apps/plugin-process | 2.3.1 | MIT OR Apache-2.0 |
+| @tauri-apps/plugin-updater | 2.10.1 | MIT OR Apache-2.0 |
 | js-tokens | 4.0.0 | MIT |
 | loose-envify | 1.4.0 | MIT |
 | react | 18.3.1 | MIT |
@@ -40,6 +42,7 @@ ggml conversions). See docs/license.md.
 | anstyle-query | 1.1.5 | MIT OR Apache-2.0 |
 | anstyle-wincon | 3.0.11 | MIT OR Apache-2.0 |
 | anyhow | 1.0.103 | MIT OR Apache-2.0 |
+| arbitrary | 1.4.2 | MIT OR Apache-2.0 |
 | arboard | 3.6.1 | MIT OR Apache-2.0 |
 | async-broadcast | 0.7.2 | MIT OR Apache-2.0 |
 | async-channel | 2.5.0 | Apache-2.0 OR MIT |
@@ -131,6 +134,7 @@ ggml conversions). See docs/license.md.
 | defmt-parser | 1.0.0 | MIT OR Apache-2.0 |
 | der | 0.8.1 | Apache-2.0 OR MIT |
 | deranged | 0.5.8 | MIT OR Apache-2.0 |
+| derive_arbitrary | 1.4.2 | MIT OR Apache-2.0 |
 | derive_builder | 0.20.2 | MIT OR Apache-2.0 |
 | derive_builder_core | 0.20.2 | MIT OR Apache-2.0 |
 | derive_builder_macro | 0.20.2 | MIT OR Apache-2.0 |
@@ -271,6 +275,8 @@ ggml conversions). See docs/license.md.
 | jiff | 0.2.32 | Unlicense OR MIT |
 | jiff-static | 0.2.32 | Unlicense OR MIT |
 | jni | 0.21.1 | MIT/Apache-2.0 |
+| jni | 0.22.4 | MIT OR Apache-2.0 |
+| jni-macros | 0.22.4 | MIT OR Apache-2.0 |
 | jni-sys | 0.3.1 | MIT OR Apache-2.0 |
 | jni-sys | 0.4.1 | MIT OR Apache-2.0 |
 | jni-sys-macros | 0.4.1 | MIT OR Apache-2.0 |
@@ -300,6 +306,7 @@ ggml conversions). See docs/license.md.
 | memoffset | 0.9.1 | MIT |
 | mime | 0.3.17 | MIT OR Apache-2.0 |
 | minimal-lexical | 0.2.1 | MIT/Apache-2.0 |
+| minisign-verify | 0.2.5 | MIT |
 | miniz_oxide | 0.8.9 | MIT OR Zlib OR Apache-2.0 |
 | mio | 1.2.1 | MIT |
 | moxcms | 0.8.1 | BSD-3-Clause OR Apache-2.0 |
@@ -339,6 +346,7 @@ ggml conversions). See docs/license.md.
 | objc2-foundation | 0.3.2 | MIT |
 | objc2-io-surface | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | objc2-metal | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
+| objc2-osa-kit | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | objc2-quartz-core | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | objc2-ui-kit | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | objc2-user-notifications | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
@@ -354,6 +362,7 @@ ggml conversions). See docs/license.md.
 | ordered-stream | 0.2.0 | MIT OR Apache-2.0 |
 | ort | 2.0.0-rc.12 | MIT OR Apache-2.0 |
 | ort-sys | 2.0.0-rc.12 | MIT OR Apache-2.0 |
+| osakit | 0.3.1 | MIT OR Apache-2.0 |
 | pango | 0.18.3 | MIT |
 | pango-sys | 0.18.0 | MIT |
 | parking | 2.2.1 | Apache-2.0 OR MIT |
@@ -418,7 +427,10 @@ ggml conversions). See docs/license.md.
 | rustfft | 6.4.1 | MIT OR Apache-2.0 |
 | rustix | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | rustls | 0.23.41 | Apache-2.0 OR ISC OR MIT |
+| rustls-native-certs | 0.8.4 | Apache-2.0 OR ISC OR MIT |
 | rustls-pki-types | 1.15.0 | MIT OR Apache-2.0 |
+| rustls-platform-verifier | 0.7.0 | MIT OR Apache-2.0 |
+| rustls-platform-verifier-android | 0.1.1 | MIT OR Apache-2.0 |
 | rustls-webpki | 0.103.13 | ISC |
 | rustversion | 1.0.23 | MIT OR Apache-2.0 |
 | ryu | 1.0.23 | Apache-2.0 OR BSL-1.0 |
@@ -452,7 +464,9 @@ ggml conversions). See docs/license.md.
 | shlex | 1.3.0 | MIT OR Apache-2.0 |
 | shlex | 2.0.1 | MIT OR Apache-2.0 |
 | signal-hook-registry | 1.4.8 | MIT OR Apache-2.0 |
+| simd_cesu8 | 1.1.1 | Apache-2.0 OR MIT |
 | simd-adler32 | 0.3.9 | MIT |
+| simdutf8 | 0.1.5 | MIT OR Apache-2.0 |
 | siphasher | 1.0.3 | MIT/Apache-2.0 |
 | slab | 0.4.12 | MIT |
 | smallvec | 1.15.2 | MIT OR Apache-2.0 |
@@ -490,6 +504,8 @@ ggml conversions). See docs/license.md.
 | tauri-plugin-macos-permissions | 2.3.0 | MIT |
 | tauri-plugin-notification | 2.3.3 | Apache-2.0 OR MIT |
 | tauri-plugin-opener | 2.5.4 | Apache-2.0 OR MIT |
+| tauri-plugin-process | 2.3.1 | Apache-2.0 OR MIT |
+| tauri-plugin-updater | 2.10.1 | Apache-2.0 OR MIT |
 | tauri-runtime | 2.11.3 | Apache-2.0 OR MIT |
 | tauri-runtime-wry | 2.11.4 | Apache-2.0 OR MIT |
 | tauri-utils | 2.9.3 | Apache-2.0 OR MIT |
@@ -682,6 +698,7 @@ ggml conversions). See docs/license.md.
 | zerotrie | 0.2.4 | Unicode-3.0 |
 | zerovec | 0.11.6 | Unicode-3.0 |
 | zerovec-derive | 0.11.3 | Unicode-3.0 |
+| zip | 4.6.1 | MIT |
 | zmij | 1.0.21 | MIT |
 | zune-core | 0.5.1 | MIT OR Apache-2.0 OR Zlib |
 | zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib |

@@ -110,6 +110,10 @@ fn build_menu(app: &AppHandle, state: TrayState) -> anyhow::Result<Menu<tauri::W
 
     let settings_item =
         MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?;
+    // SPEC9 FR-U1: the tray is Yat Yat's everyday surface — updates live
+    // here too, right after Settings….
+    let check_updates =
+        MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit Yat Yat")
         .accelerator("CmdOrCtrl+Q")
         .build(app)?;
@@ -122,6 +126,7 @@ fn build_menu(app: &AppHandle, state: TrayState) -> anyhow::Result<Menu<tauri::W
         .item(&history_menu)
         .separator()
         .item(&settings_item)
+        .item(&check_updates)
         .item(&PredefinedMenuItem::separator(app)?)
         .item(&quit)
         .build()?)
@@ -184,6 +189,7 @@ fn on_menu_event(app: &AppHandle, id: &str) {
         }
         "retry_last" => state.pipeline.retry(),
         "settings" => crate::show_settings_window(app, None),
+        "check_updates" => crate::open_update_check(app),
         "quit" => app.exit(0),
         id if id.starts_with("hist:") => {
             if let Ok(index) = id.trim_start_matches("hist:").parse::<usize>() {

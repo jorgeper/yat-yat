@@ -40,6 +40,14 @@ pub fn show_settings_window(app: &AppHandle, section: Option<&str>) {
     }
 }
 
+/// SPEC9 FR-U1: both menu surfaces route here — show the settings window
+/// and hand off to its Check for Updates dialog.
+pub fn open_update_check(app: &AppHandle) {
+    use tauri::Emitter;
+    show_settings_window(app, None);
+    let _ = app.emit_to(SETTINGS_LABEL, "check-updates", ());
+}
+
 /// The macOS application menu (top-left of the menu bar while a Yat Yat
 /// window is focused). Replaces Tauri's default so it carries a Settings…
 /// item (⌘,); Edit stays for clipboard shortcuts in the settings fields.
@@ -64,8 +72,12 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
             "Developer: Jorge Pereira\nMIT License\nhttps://github.com/jorgeper/yat-yat",
         ))
         .build();
+    // SPEC9 FR-U1: Check for Updates… directly after About.
+    let check_updates = MenuItemBuilder::with_id("app_check_updates", "Check for Updates…")
+        .build(app)?;
     let app_menu = SubmenuBuilder::new(app, "Yat Yat")
         .about(Some(about))
+        .item(&check_updates)
         .separator()
         .item(&settings)
         .separator()
@@ -169,6 +181,10 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        // SPEC9: stock updater + relaunch. All update network is Rust-side,
+        // user-initiated, and signature-verified against the baked-in pubkey.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -218,8 +234,10 @@ pub fn run() {
             {
                 handle.set_menu(build_app_menu(&handle)?)?;
                 handle.on_menu_event(|app, event| {
-                    if event.id().as_ref() == "app_settings" {
-                        show_settings_window(app, None);
+                    match event.id().as_ref() {
+                        "app_settings" => show_settings_window(app, None),
+                        "app_check_updates" => open_update_check(app),
+                        _ => {}
                     }
                 });
             }

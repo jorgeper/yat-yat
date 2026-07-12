@@ -201,6 +201,16 @@ Licensing guard: `npm run licenses` regenerates THIRD-PARTY-NOTICES.md from
 permissive allowlist (U13-tested, including the tauri-nspanel
 missing-metadata override) — copyleft can't enter the bundle unnoticed.
 
+Updater (SPEC9): **Check for Updates…** (app menu + tray) shows the
+settings window and emits `check-updates`; the dialog drives the
+`src/ipc/updates.ts` seam — `tauri-plugin-updater`/`-process` on desktop
+(all network Rust-side, user-initiated, minisign-verified against the
+pubkey in tauri.conf.json), a `window.__yyUpdate` mock in the browser
+(E15a/E15b). Release builds emit signed `.app.tar.gz` updater artifacts and
+a `latest.json` composed by `scripts/updater-manifest.mjs` (pure core,
+U14); publishing a release advances the rolling `updater` release that the
+fixed endpoint points at (`updater-manifest.yml`).
+
 ## Design notes
 
 - **One pipeline thread** serializes Idle→Recording→Processing, so double

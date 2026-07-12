@@ -5,12 +5,14 @@ import { useCallback, useEffect, useState } from "react";
 import { api, listen } from "../ipc/api";
 import type { HistoryEntry, ModelStatus, Settings } from "../ipc/types";
 import type { StepId } from "../lib/onboarding";
+import { updates } from "../ipc/updates";
 import AppearanceSection from "./AppearanceSection";
 import GeneralSection from "./GeneralSection";
 import HotkeySection from "./HotkeySection";
 import ModelsSection from "./ModelsSection";
 import CleanupSection from "./CleanupSection";
 import Onboarding from "./Onboarding";
+import UpdateDialog from "./UpdateDialog";
 
 export type SectionId = "general" | "appearance" | "hotkey" | "models" | "cleanup";
 
@@ -31,6 +33,9 @@ export default function SettingsApp() {
   // Session-only intent (SPEC5 §4.3): Re-run setup walks from the top;
   // launch resume and Fix-in-setup open at the frontier.
   const [wizardFromTop, setWizardFromTop] = useState(false);
+  // SPEC9: Check for Updates… (native menu / tray) opens the dialog here.
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
 
   const refreshModels = useCallback(() => {
     api.listModels().then(setModels).catch(console.error);
@@ -55,8 +60,13 @@ export default function SettingsApp() {
         await listen<string>("navigate-section", (s) => {
           if (SECTIONS.some((x) => x.id === s)) setSection(s as SectionId);
         }),
+        await listen("check-updates", () => setUpdateOpen(true)),
       );
     })();
+    api
+      .getAppInfo()
+      .then((info) => setAppVersion(info.version))
+      .catch(console.error);
     return () => unlisteners.forEach((u) => u());
   }, [refreshModels, refreshHistory]);
 
@@ -142,6 +152,13 @@ export default function SettingsApp() {
 
   return (
     <div className="settings" data-testid="settings-root">
+      {updateOpen && (
+        <UpdateDialog
+          currentVersion={appVersion}
+          updates={updates}
+          onClose={() => setUpdateOpen(false)}
+        />
+      )}
       <nav className="settings-nav">
         <div className="app-name">Yat Yat</div>
         {SECTIONS.map((s) => (

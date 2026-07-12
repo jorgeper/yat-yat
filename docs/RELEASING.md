@@ -47,7 +47,7 @@ gh run list --workflow release.yml
 gh run watch                                 # test gate → macOS build → draft release
 
 # ---- smoke-test the draft ----------------------------------------------------
-gh release view v0.2.0-alpha.2               # exactly 2 assets: dmg, SHA256SUMS.txt
+gh release view v0.2.0-alpha.2               # 5 assets: dmg, app.tar.gz, .sig, latest.json, SHA256SUMS.txt
 gh release download v0.2.0-alpha.2 -D /tmp/yy-smoke
 (cd /tmp/yy-smoke && shasum -c SHA256SUMS.txt)   # verify, then install & dictate
 
@@ -72,6 +72,27 @@ first open), walk onboarding (mic + Accessibility + a model download), and
 dictate into a real app. Remember that each unsigned build re-keys the
 Accessibility grant — updating from a previous alpha will ask you to
 re-grant, and the app's wizard handles it.
+
+## Updater (SPEC9)
+
+Release builds are minisign-signed: CI injects `TAURI_SIGNING_PRIVATE_KEY`
+and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (GitHub Actions secrets; the key
+also lives in an untracked local backup — never in the repo), and tauri
+emits `Yat Yat_<ver>_aarch64.app.tar.gz` + `.sig` plus a `latest.json`
+manifest alongside the dmg. **Publishing a release** (the same human
+`--draft=false` flip as always) triggers `updater-manifest.yml`, which
+copies that release's `latest.json` onto the **rolling `updater` release**
+— the fixed endpoint in-app Check for Updates… polls. Drafts never reach
+it. If the manifest ever needs re-advancing (or rolling back), run the
+workflow manually: `gh workflow run updater-manifest.yml -f tag=v<ver>`.
+
+Local signed builds (to verify updater artifacts):
+
+```bash
+TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/yat-yat-updater.key)" \
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(cat ~/.tauri/yat-yat-updater.password)" \
+npm run tauri build
+```
 
 ## Semver / alpha policy
 

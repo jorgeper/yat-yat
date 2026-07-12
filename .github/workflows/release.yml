@@ -78,11 +78,23 @@ jobs:
       - run: npm ci
       # Apple Silicon only for the alpha (SPEC8 §2.2) — the universal/Intel
       # build of the ONNX + whisper.cpp stack is a documented seam.
+      # SPEC9: signing env makes tauri emit the updater artifacts
+      # (.app.tar.gz + .sig) alongside the dmg.
       - run: npm run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
           path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-updater
+          path: |
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
           if-no-files-found: error
 
   release:
@@ -99,11 +111,13 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
-      - name: Asset guard (exactly one dmg, under 80 MB)
+      - name: Asset guard (dmg + updater bundle + sig, none over 80 MB)
         run: |
           cd release-assets
           ls -l
           [ "$(ls *.dmg 2>/dev/null | wc -l)" -eq 1 ] || { echo "::error::expected exactly one dmg"; exit 1; }
+          [ "$(ls *.app.tar.gz 2>/dev/null | wc -l)" -eq 1 ] || { echo "::error::expected exactly one .app.tar.gz"; exit 1; }
+          [ "$(ls *.app.tar.gz.sig 2>/dev/null | wc -l)" -eq 1 ] || { echo "::error::expected exactly one .app.tar.gz.sig"; exit 1; }
           for f in *; do
             size=$(wc -c < "$f")
             if [ "$size" -gt 83886080 ]; then echo "::error::$f is $size bytes (> 80 MB)"; exit 1; fi
@@ -111,11 +125,24 @@ jobs:
       - name: Checksums
         run: |
           cd release-assets
+          # SPEC9: version the updater bundle so per-release URLs are stable.
+          [ -e "Yat Yat.app.tar.gz" ] && mv "Yat Yat.app.tar.gz" "Yat Yat_${VERSION}_aarch64.app.tar.gz"
+          [ -e "Yat Yat.app.tar.gz.sig" ] && mv "Yat Yat.app.tar.gz.sig" "Yat Yat_${VERSION}_aarch64.app.tar.gz.sig"
           # GitHub rewrites spaces in asset filenames to dots on upload; rename
           # first so SHA256SUMS.txt matches what users actually download.
           for f in *\ *; do [ -e "$f" ] && mv "$f" "${f// /.}"; done
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
+      - name: Updater manifest (SPEC9)
+        run: |
+          BASE="https://github.com/${{ github.repository }}/releases/download/v${VERSION}"
+          node scripts/updater-manifest.mjs \
+            --version "$VERSION" \
+            --notes "Yat Yat $VERSION — see the release page for details." \
+            --mac-url "$BASE/Yat.Yat_${VERSION}_aarch64.app.tar.gz" \
+            --mac-sig-file "release-assets/Yat.Yat_${VERSION}_aarch64.app.tar.gz.sig" \
+            --out release-assets/latest.json
+          cat release-assets/latest.json
       - name: Release notes header
         run: |
           cat > NOTES.md <<'EOF'
@@ -124,7 +151,9 @@ jobs:
           | Asset | What it is |
           | --- | --- |
           | `Yat.Yat_*_aarch64.dmg` | macOS app (Apple Silicon). Unsigned — Gatekeeper will refuse it at first: System Settings → Privacy & Security → **Open Anyway**, or `xattr -dr com.apple.quarantine "/Applications/Yat Yat.app"`. |
-          | `SHA256SUMS.txt` | Checksums for the asset above. |
+          | `Yat.Yat_*_aarch64.app.tar.gz` (+ `.sig`) | Consumed by **Check for Updates…** inside the app — not for manual installs. |
+          | `latest.json` | The updater manifest for this version. |
+          | `SHA256SUMS.txt` | Checksums for the assets above. |
 
           First run walks you through the microphone and Accessibility
           permissions. **Updating from a previous alpha:** unsigned builds
@@ -136,9 +165,11 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then
             gh release create "$GITHUB_REF_NAME" --draft --generate-notes \
               --title "Yat Yat $VERSION" --notes-file NOTES.md \
-              release-assets/*.dmg release-assets/SHA256SUMS.txt
+              release-assets/*.dmg release-assets/*.app.tar.gz release-assets/*.app.tar.gz.sig \
+              release-assets/latest.json release-assets/SHA256SUMS.txt
           else
             gh release create "v$VERSION" --draft --prerelease --target "$GITHUB_SHA" \
               --title "Yat Yat $VERSION" --notes-file NOTES.md \
-              release-assets/*.dmg release-assets/SHA256SUMS.txt
+              release-assets/*.dmg release-assets/*.app.tar.gz release-assets/*.app.tar.gz.sig \
+              release-assets/latest.json release-assets/SHA256SUMS.txt
           fi

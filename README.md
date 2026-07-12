@@ -8,10 +8,12 @@ anywhere, talk, press it again — clean transcribed text lands at your cursor i
 whatever app has focus.
 
 - **Fully local.** Audio capture, speech-to-text, and cleanup all run on your
-  machine. No cloud STT, no telemetry, no update pings — ever. The only network
-  operations are (a) one-time model downloads you start yourself, verified by
-  SHA-256, and (b) the optional transcript-enhancement pass, which is hard-locked
-  to `localhost` endpoints in code.
+  machine. No cloud STT, no telemetry, no automatic update pings — ever. The
+  only network operations are (a) one-time model downloads you start yourself,
+  verified by SHA-256, (b) the optional transcript-enhancement pass, which is
+  hard-locked to `localhost` endpoints in code, and (c) the **user-initiated**
+  Check for Updates… — Rust-side, exclusively to this repo's GitHub Releases,
+  responses verified against a public key baked into the app.
 - **Fast.** Parakeet V3 (the recommended model) transcribes well past real-time
   on Apple Silicon; the active model stays warm-loaded between dictations.
 - **Simple.** One hotkey, one overlay, one menu-bar icon.
@@ -114,6 +116,15 @@ Yat Yat ships no models; pick one in Settings → Models (or during onboarding):
 The catalog is data-driven: adding a model is one new entry in
 `src-tauri/models.json` (id, engine family, URL, SHA-256, size) — no code
 changes.
+
+## Updates
+
+**Yat Yat ▸ Check for Updates…** (also in the menu-bar tray menu) checks
+GitHub Releases for a newer version — strictly when you ask, never on a
+schedule — then downloads, verifies the signature against the public key
+baked into the app, installs, and relaunches on your click. Updates are
+hosted on this repo's [releases](https://github.com/jorgeper/yat-yat/releases);
+builds older than the updater itself need one manual download first.
 
 ## Personal dictionary
 
