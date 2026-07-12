@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * release:prepare (SPEC8 §1): move the app version in lock-step across
  * package.json, src-tauri/tauri.conf.json, and src-tauri/Cargo.toml, refresh

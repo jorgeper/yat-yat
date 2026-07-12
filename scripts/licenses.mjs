@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * npm run licenses (SPEC8 §6): regenerate THIRD-PARTY-NOTICES.md from the
  * real dependency graphs — every production npm package (package-lock.json)

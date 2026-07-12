@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * SPEC9 §3.2: compose the tauri-updater `latest.json` manifest from the
  * release's signed artifacts. Pure core (composeManifest, unit-tested by

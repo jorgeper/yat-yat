@@ -4,7 +4,11 @@ import { defineConfig } from "@playwright/test";
 // Tauri and swaps in the mock IPC shim (src/ipc/mock.ts).
 export default defineConfig({
   testDir: "tests/e2e",
-  timeout: 30_000,
+  // Shared CI runners are slow and oversubscribed: fewer parallel browsers
+  // and a longer per-test budget there (assertions unchanged — E9e, the
+  // longest flow, was timing out under 5-way parallelism on 3-core runners).
+  timeout: process.env.CI ? 60_000 : 30_000,
+  workers: process.env.CI ? 2 : undefined,
   retries: 0,
   use: {
     baseURL: "http://localhost:1421",

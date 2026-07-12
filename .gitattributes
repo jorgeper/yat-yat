@@ -1,0 +1,4 @@
+# Scripts are ESM loaded by Node on every platform — keep LF so the
+# Windows checkout never mangles them.
+*.mjs text eol=lf
+*.sh text eol=lf
