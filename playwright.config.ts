@@ -13,6 +13,10 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:1421",
     headless: true,
+    // CI-only flight recorder: a failure leaves a full trace in
+    // test-results/ (uploaded as a workflow artifact) instead of a bare
+    // assertion message we can't reproduce locally.
+    trace: process.env.CI ? "retain-on-failure" : "off",
   },
   webServer: {
     command: "vite preview --port 1421 --strictPort",

@@ -63,6 +63,14 @@ jobs:
       - run: npm ci
       - run: npx playwright install chromium
       - run: npm run validate
+      # Playwright traces for any e2e failure — CI-only flakes are
+      # undiagnosable without them.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-failure-traces
+          path: test-results/
+          if-no-files-found: ignore
 
   # SPEC10: the cross-platform half of the suite proven on Windows itself
   # (the full validate gate — Playwright e2e + I-suite — stays on macOS).
