@@ -1,7 +1,9 @@
-# Yat Yat release pipeline (SPEC8 §2): tag push (v*) or manual dispatch →
-# full validate gate + version check → macOS build → one draft GitHub Release
-# with exactly two assets (dmg, SHA256SUMS.txt). Nothing auto-publishes; a
-# human smoke-tests the draft and flips it live (see docs/RELEASING.md).
+# Yat Yat release pipeline (SPEC8 §2 + SPEC10): tag push (v*) or manual
+# dispatch → full validate gate + version check (macOS) + windows test job →
+# macOS dmg + Windows NSIS builds → one draft GitHub Release with exactly
+# seven assets (dmg, setup.exe, both updater artifacts + sigs, latest.json,
+# SHA256SUMS.txt). Nothing auto-publishes; a human smoke-tests the draft and
+# flips it live (see docs/RELEASING.md).
 name: release
 
 on:
@@ -62,6 +64,34 @@ jobs:
       - run: npx playwright install chromium
       - run: npm run validate
 
+  # SPEC10: the cross-platform half of the suite proven on Windows itself
+  # (the full validate gate — Playwright e2e + I-suite — stays on macOS).
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install Vulkan SDK (whisper.cpp vulkan backend)
+        shell: pwsh
+        run: |
+          $ver = "1.3.296.0"
+          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$ver/windows/VulkanSDK-$ver-Installer.exe" -OutFile vulkan-sdk.exe
+          Start-Process .\vulkan-sdk.exe -ArgumentList '--accept-licenses','--default-answer','--confirm-command','install' -Wait
+          "VULKAN_SDK=C:\VulkanSDK\$ver" >> $env:GITHUB_ENV
+          "C:\VulkanSDK\$ver\Bin" >> $env:GITHUB_PATH
+      - run: npm ci
+      - run: cargo test
+        working-directory: src-tauri
+      - run: npx vitest run
+      - run: npm run build
+
   build-macos:
     runs-on: macos-latest
     needs: test
@@ -97,9 +127,45 @@ jobs:
             src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
           if-no-files-found: error
 
+  build-windows:
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install Vulkan SDK (whisper.cpp vulkan backend)
+        shell: pwsh
+        run: |
+          $ver = "1.3.296.0"
+          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$ver/windows/VulkanSDK-$ver-Installer.exe" -OutFile vulkan-sdk.exe
+          Start-Process .\vulkan-sdk.exe -ArgumentList '--accept-licenses','--default-answer','--confirm-command','install' -Wait
+          "VULKAN_SDK=C:\VulkanSDK\$ver" >> $env:GITHUB_ENV
+          "C:\VulkanSDK\$ver\Bin" >> $env:GITHUB_PATH
+      - run: npm ci
+      # SPEC10: NSIS x64 installer; with the signing env tauri also emits the
+      # .sig updater artifact for the installer itself.
+      - run: npm run tauri build -- --bundles nsis
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-nsis
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/nsis/*-setup.exe.sig
+          if-no-files-found: error
+
   release:
     runs-on: ubuntu-latest
-    needs: [test, build-macos]
+    needs: [test, test-windows, build-macos, build-windows]
     permissions:
       contents: write
     env:
@@ -111,13 +177,15 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
-      - name: Asset guard (dmg + updater bundle + sig, none over 80 MB)
+      - name: Asset guard (dmg + setup.exe + updater artifacts, none over 80 MB)
         run: |
           cd release-assets
           ls -l
           [ "$(ls *.dmg 2>/dev/null | wc -l)" -eq 1 ] || { echo "::error::expected exactly one dmg"; exit 1; }
           [ "$(ls *.app.tar.gz 2>/dev/null | wc -l)" -eq 1 ] || { echo "::error::expected exactly one .app.tar.gz"; exit 1; }
           [ "$(ls *.app.tar.gz.sig 2>/dev/null | wc -l)" -eq 1 ] || { echo "::error::expected exactly one .app.tar.gz.sig"; exit 1; }
+          [ "$(ls *-setup.exe 2>/dev/null | wc -l)" -eq 1 ] || { echo "::error::expected exactly one -setup.exe"; exit 1; }
+          [ "$(ls *-setup.exe.sig 2>/dev/null | wc -l)" -eq 1 ] || { echo "::error::expected exactly one -setup.exe.sig"; exit 1; }
           for f in *; do
             size=$(wc -c < "$f")
             if [ "$size" -gt 83886080 ]; then echo "::error::$f is $size bytes (> 80 MB)"; exit 1; fi
@@ -133,7 +201,7 @@ jobs:
           for f in *\ *; do [ -e "$f" ] && mv "$f" "${f// /.}"; done
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
-      - name: Updater manifest (SPEC9)
+      - name: Updater manifest (SPEC9 + SPEC10)
         run: |
           BASE="https://github.com/${{ github.repository }}/releases/download/v${VERSION}"
           node scripts/updater-manifest.mjs \
@@ -141,6 +209,8 @@ jobs:
             --notes "Yat Yat $VERSION — see the release page for details." \
             --mac-url "$BASE/Yat.Yat_${VERSION}_aarch64.app.tar.gz" \
             --mac-sig-file "release-assets/Yat.Yat_${VERSION}_aarch64.app.tar.gz.sig" \
+            --win-url "$BASE/Yat.Yat_${VERSION}_x64-setup.exe" \
+            --win-sig-file "release-assets/Yat.Yat_${VERSION}_x64-setup.exe.sig" \
             --out release-assets/latest.json
           cat release-assets/latest.json
       - name: Release notes header
@@ -151,7 +221,8 @@ jobs:
           | Asset | What it is |
           | --- | --- |
           | `Yat.Yat_*_aarch64.dmg` | macOS app (Apple Silicon). Unsigned — Gatekeeper blocks the first open ("could not verify" or even "damaged"; the file is fine). Fix: `xattr -dr com.apple.quarantine "/Applications/Yat Yat.app"`, or System Settings → Privacy & Security → **Open Anyway** where offered. |
-          | `Yat.Yat_*_aarch64.app.tar.gz` (+ `.sig`) | Consumed by **Check for Updates…** inside the app — not for manual installs. |
+          | `Yat.Yat_*_x64-setup.exe` | Windows installer (x64). Unsigned: SmartScreen → **More info** → **Run anyway**. |
+          | `Yat.Yat_*_aarch64.app.tar.gz` (+ `.sig`), `*-setup.exe.sig` | Consumed by **Check for Updates…** inside the app — not for manual installs. |
           | `latest.json` | The updater manifest for this version. |
           | `SHA256SUMS.txt` | Checksums for the assets above. |
 
@@ -166,10 +237,12 @@ jobs:
             gh release create "$GITHUB_REF_NAME" --draft --generate-notes \
               --title "Yat Yat $VERSION" --notes-file NOTES.md \
               release-assets/*.dmg release-assets/*.app.tar.gz release-assets/*.app.tar.gz.sig \
+              release-assets/*-setup.exe release-assets/*-setup.exe.sig \
               release-assets/latest.json release-assets/SHA256SUMS.txt
           else
             gh release create "v$VERSION" --draft --prerelease --target "$GITHUB_SHA" \
               --title "Yat Yat $VERSION" --notes-file NOTES.md \
               release-assets/*.dmg release-assets/*.app.tar.gz release-assets/*.app.tar.gz.sig \
+              release-assets/*-setup.exe release-assets/*-setup.exe.sig \
               release-assets/latest.json release-assets/SHA256SUMS.txt
           fi

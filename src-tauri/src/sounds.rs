@@ -56,5 +56,29 @@ fn play_now(app: &AppHandle, cue: Cue) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+/// SPEC10 FR-S2: PlaySoundW on a dedicated worker thread. SND_SYNC on that
+/// thread (not SND_ASYNC) so the wide-string buffer provably outlives
+/// playback — the dictation path itself never waits.
+#[cfg(target_os = "windows")]
+fn play_now(app: &AppHandle, cue: Cue) {
+    use std::os::windows::ffi::OsStrExt;
+    use tauri::path::BaseDirectory;
+    use tauri::Manager;
+    let Ok(path) = app
+        .path()
+        .resolve(format!("resources/{}", cue.file()), BaseDirectory::Resource)
+    else {
+        return;
+    };
+    let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    wide.push(0);
+    std::thread::spawn(move || unsafe {
+        use windows_sys::Win32::Media::Audio::{
+            PlaySoundW, SND_FILENAME, SND_NODEFAULT, SND_SYNC,
+        };
+        PlaySoundW(wide.as_ptr(), std::ptr::null_mut(), SND_FILENAME | SND_NODEFAULT | SND_SYNC);
+    });
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn play_now(_app: &AppHandle, _cue: Cue) {}

@@ -67,10 +67,76 @@ pub fn frontmost_app(app: &tauri::AppHandle) -> Option<FrontmostApp> {
             .ok()
             .flatten()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app; // Win32 foreground queries are callable from any thread.
+        frontmost_app_windows()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = app;
         None
+    }
+}
+
+/// SPEC10 FR-S1: normalize a Windows executable path into the guard's
+/// comparison key — the lowercased, backslash-normalized full path (Windows'
+/// analog of a bundle id) — plus a display name (the file stem). Pure and
+/// compiled on every platform so R14 runs everywhere. None on anything
+/// unusable: the guard fails open.
+pub fn windows_exe_key(path: &str) -> Option<FrontmostApp> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let normalized = trimmed.replace('/', "\\");
+    let file = normalized.rsplit('\\').next().unwrap_or(&normalized);
+    let name = std::path::Path::new(file)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(file)
+        .to_string();
+    if name.is_empty() {
+        return None;
+    }
+    Some(FrontmostApp {
+        bundle_id: normalized.to_lowercase(),
+        name,
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn frontmost_app_windows() -> Option<FrontmostApp> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId,
+    };
+
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_null() {
+            return None;
+        }
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if pid == 0 {
+            return None;
+        }
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return None;
+        }
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(handle, 0, buf.as_mut_ptr(), &mut len);
+        CloseHandle(handle);
+        if ok == 0 || len == 0 {
+            return None;
+        }
+        windows_exe_key(&String::from_utf16_lossy(&buf[..len as usize]))
     }
 }
 
@@ -207,5 +273,35 @@ mod tests {
             name: "Example".into(),
         };
         assert_eq!(named.display_name(), "Example");
+    }
+
+    // R14: the Windows executable-path key normalization (SPEC10 FR-S1) —
+    // pure, so it runs on every platform.
+    #[test]
+    fn r14_lowercases_the_full_path_as_the_key() {
+        let a = windows_exe_key(r"C:\Program Files\Microsoft Office\WINWORD.EXE").unwrap();
+        assert_eq!(a.bundle_id, r"c:\program files\microsoft office\winword.exe");
+        assert_eq!(a.name, "WINWORD");
+    }
+
+    #[test]
+    fn r14_case_and_slash_variants_compare_equal() {
+        let a = windows_exe_key(r"C:\Windows\System32\Notepad.exe").unwrap();
+        let b = windows_exe_key("c:/windows/system32/NOTEPAD.EXE").unwrap();
+        assert_eq!(a.bundle_id, b.bundle_id);
+    }
+
+    #[test]
+    fn r14_display_name_is_the_file_stem() {
+        assert_eq!(windows_exe_key(r"D:\Tools\slack.exe").unwrap().name, "slack");
+        // No extension: the file name itself.
+        assert_eq!(windows_exe_key(r"C:\odd\binary").unwrap().name, "binary");
+    }
+
+    #[test]
+    fn r14_unusable_paths_fail_open_as_none() {
+        assert!(windows_exe_key("").is_none());
+        assert!(windows_exe_key("   ").is_none());
+        assert!(windows_exe_key(r"C:\ends\in\slash\").is_none());
     }
 }

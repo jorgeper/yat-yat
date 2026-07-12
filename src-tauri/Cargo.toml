@@ -52,6 +52,18 @@ handy-keys = "0.3"
 # whisper.cpp GGUF (Metal on macOS).
 transcribe-rs = { version = "=0.3.11", features = ["onnx", "whisper-cpp"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+# SPEC10: Vulkan-accelerated whisper on Windows (whisper.cpp falls back to
+# CPU at runtime when no Vulkan device exists).
+transcribe-rs = { version = "=0.3.11", features = ["onnx", "whisper-cpp", "whisper-vulkan"] }
+# Frontmost-window query (focus guard) + PlaySoundW (sound cues).
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_System_Threading",
+  "Win32_Media_Audio",
+] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # Pinned to an exact revision (not a movable branch) so a compromised or
 # force-pushed upstream can never silently change what we build.

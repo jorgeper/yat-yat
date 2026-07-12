@@ -47,7 +47,7 @@ gh run list --workflow release.yml
 gh run watch                                 # test gate → macOS build → draft release
 
 # ---- smoke-test the draft ----------------------------------------------------
-gh release view v0.2.0-alpha.2               # 5 assets: dmg, app.tar.gz, .sig, latest.json, SHA256SUMS.txt
+gh release view v0.2.0-alpha.2               # 7 assets: dmg, setup.exe, app.tar.gz + both .sig, latest.json, SHA256SUMS.txt
 gh release download v0.2.0-alpha.2 -D /tmp/yy-smoke
 (cd /tmp/yy-smoke && shasum -c SHA256SUMS.txt)   # verify, then install & dictate
 
@@ -107,6 +107,14 @@ npm run tauri build
 - Pre-releases are published with `--prerelease` (GitHub labels them and
   keeps them off `/releases/latest` once a stable release exists).
 
-Out of scope for now (seams noted in SPEC8): code signing / notarization
-(which will also end the Accessibility re-grant dance), the auto-updater,
-Windows/Linux packages, and universal (Intel) macOS builds.
+Since SPEC9 the updater ships (see “Updater” above); since SPEC10 the
+pipeline also builds the **Windows x64 NSIS installer** (test-windows +
+build-windows jobs; the setup.exe doubles as the signed updater artifact,
+and `latest.json` carries both `darwin-aarch64` and `windows-x86_64`).
+Before publishing a release to Windows users, walk SPEC10 §7's manual QA
+checklist on real Windows hardware.
+
+Out of scope for now (seams noted in SPEC8/SPEC10): code signing /
+notarization on both platforms (macOS signing will also end the
+Accessibility re-grant dance), Linux packages, ARM64 Windows, and universal
+(Intel) macOS builds.

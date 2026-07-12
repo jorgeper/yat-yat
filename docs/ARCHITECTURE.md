@@ -57,9 +57,9 @@ platform-specific seams, each isolated in one place:
 | Hotkey backend | handy-keys event tap (Accessibility) | handy-keys `WH_KEYBOARD_LL` hook (no permission needed) — same API |
 | Permissions | `tauri-plugin-macos-permissions` + onboarding step | step is skipped on non-mac (`Onboarding.tsx` builds the step list per platform) |
 | Dock + tray app | regular activation (LSUIElement dropped post-SPEC8 by owner preference; Dock click → Reopen → Settings) | standard taskbar presence + tray |
-| Frontmost app (focus guard) | `focus.rs`: NSWorkspace via main thread | same fn, `GetForegroundWindow` + process name; stub currently returns `None` (guard off) |
-| Sound cues | `sounds.rs`: spawn `afplay` | same fn, `PlaySoundW` with `SND_ASYNC`; stub currently no-op |
-| Whisper accel | `whisper-metal` feature | swap to `whisper-vulkan` feature in Cargo target table |
+| Frontmost app (focus guard) | `focus.rs`: NSWorkspace via main thread | **implemented (SPEC10)**: `GetForegroundWindow` → exe path, compared lowercased (`windows_exe_key`, R14); every failure is `None` — guard fails open |
+| Sound cues | `sounds.rs`: spawn `afplay` | **implemented (SPEC10)**: `PlaySoundW` (`SND_SYNC` on a worker thread so the buffer outlives playback) |
+| Whisper accel | `whisper-metal` feature | **implemented (SPEC10)**: `whisper-vulkan` in the Windows target table; whisper.cpp falls back to CPU without a Vulkan device |
 
 Remaining Windows work is packaging (MSI/NSIS via `tauri build`), not code.
 
@@ -155,8 +155,10 @@ contract inside a sandboxed frame, and nothing here changes.
 Never paste into the wrong app silently. `focus.rs` is the platform boundary
 for frontmost-application queries: on macOS it asks NSWorkspace (raw
 `msg_send!`, marshalled to the main thread like tray_probe); the non-mac stub
-returns `None`, which disables the guard entirely — the Windows port point is
-`GetForegroundWindow` + process name in the same function.
+returns `None`, which disables the guard entirely. Since SPEC10 the Windows
+branch is real: `GetForegroundWindow` → `QueryFullProcessImageNameW`, with
+the lowercased executable path as the comparison key (`windows_exe_key`,
+pure and R14-tested); every failure path stays `None`.
 
 The flow: `start_recording` captures the frontmost app (the overlay panel is
 non-activating, so frontmost-at-hotkey IS the paste target) into

@@ -4,17 +4,18 @@
  * release's signed artifacts. Pure core (composeManifest, unit-tested by
  * U14) + a small CLI used by the release workflow. Signatures are the
  * CONTENT of the .sig files (the manifest embeds them; they are not
- * separate downloads). Ported from marky-mark's updater-manifest.mjs;
- * Yat Yat ships Apple Silicon only, so the single platform key is
- * `darwin-aarch64`.
+ * separate downloads). Ported from marky-mark's updater-manifest.mjs.
+ * Platform keys: `darwin-aarch64` (Apple Silicon) and, since SPEC10,
+ * `windows-x86_64` (the NSIS installer is the update artifact).
  *
  * CLI:
  *   node scripts/updater-manifest.mjs --version 0.1.0-alpha.2 \
- *     --notes "..." --mac-url URL --mac-sig-file PATH --out latest.json
+ *     --notes "..." --mac-url URL --mac-sig-file PATH \
+ *     --win-url URL --win-sig-file PATH --out latest.json
  */
 import { readFileSync, writeFileSync } from "node:fs";
 
-/** @typedef {{ platform: 'darwin-aarch64', url: string, signature: string }} ManifestAsset */
+/** @typedef {{ platform: 'darwin-aarch64' | 'windows-x86_64', url: string, signature: string }} ManifestAsset */
 
 /**
  * @param {{ version: string, notes: string, pubDate: string, assets: ManifestAsset[] }} input
@@ -30,7 +31,7 @@ export function composeManifest({ version, notes, pubDate, assets }) {
 
   const platforms = {};
   for (const a of assets) {
-    if (a.platform !== "darwin-aarch64") {
+    if (a.platform !== "darwin-aarch64" && a.platform !== "windows-x86_64") {
       throw new Error(`composeManifest: unknown platform ${a.platform}`);
     }
     if (!a.url || !/^https:\/\//.test(a.url))
@@ -56,6 +57,13 @@ if (process.argv[1] && process.argv[1].endsWith("updater-manifest.mjs") && arg("
       platform: "darwin-aarch64",
       url: arg("mac-url"),
       signature: readFileSync(arg("mac-sig-file"), "utf8"),
+    });
+  }
+  if (arg("win-url")) {
+    assets.push({
+      platform: "windows-x86_64",
+      url: arg("win-url"),
+      signature: readFileSync(arg("win-sig-file"), "utf8"),
     });
   }
   const manifest = composeManifest({

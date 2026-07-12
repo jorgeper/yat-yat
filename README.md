@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/jorgeper/yat-yat?include_prereleases&label=release)](https://github.com/jorgeper/yat-yat/releases/latest)
 
-Fast, fully-local voice dictation for macOS (Windows-portable). Press a hotkey
+Fast, fully-local voice dictation for macOS and Windows. Press a hotkey
 anywhere, talk, press it again — clean transcribed text lands at your cursor in
 whatever app has focus.
 
@@ -37,6 +37,7 @@ the top):
 | Platform | File | Note |
 | --- | --- | --- |
 | **macOS** (Apple Silicon) | `Yat Yat_<version>_aarch64.dmg` | Unsigned — see [First launch on macOS](#first-launch-on-macos) |
+| **Windows** (x64) | `Yat Yat_<version>_x64-setup.exe` | New and lightly tested. Unsigned — see [First launch on Windows](#first-launch-on-windows) |
 
 Verify downloads against `SHA256SUMS.txt`. All versions:
 [releases](https://github.com/jorgeper/yat-yat/releases).
@@ -64,6 +65,16 @@ It's a one-time step per download; in-app updates
 your first model download. **Updating from a previous alpha:** unsigned
 builds re-key the Accessibility grant — the app notices and walks you
 through re-granting it.
+
+### First launch on Windows
+
+The Windows build is fresh out of the port (SPEC10) and lightly tested —
+expect rougher edges than on macOS. The installer is unsigned, so
+SmartScreen objects once: **More info → Run anyway**. No Accessibility-style
+permission exists on Windows — the hotkey and paste work out of the box; if
+the microphone is blocked, enable it under Settings → Privacy & security →
+Microphone. Whisper uses Vulkan GPU acceleration when a device is available
+and falls back to CPU otherwise.
 
 ## How it works
 
