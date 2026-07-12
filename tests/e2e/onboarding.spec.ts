@@ -71,6 +71,31 @@ test("E9c-defer: deferring the menu-bar gate persists the deferral", async ({ pa
   expect(savedSettingsJson).toContain('"menubar"');
 });
 
+/**
+ * Advance from the model step to Try It. The model gate transitioning
+ * unmet -> met can AUTO-advance the wizard (SPEC2) on a poll tick before an
+ * explicit Continue click lands — a real race on slow CI runners (root-caused
+ * from the run-29203871806 trace: "element was detached from the DOM").
+ * Accept either path; the destination assertion is unchanged.
+ */
+async function continueToTry(page: import("@playwright/test").Page) {
+  const wizard = page.getByTestId("onboarding");
+  await expect
+    .poll(
+      async () => {
+        const step = await wizard.getAttribute("data-step");
+        if (step === "try") return "try";
+        const next = page.getByTestId("onboarding-next");
+        if (await next.isVisible().catch(() => false)) {
+          await next.click({ timeout: 500 }).catch(() => {});
+        }
+        return wizard.getAttribute("data-step");
+      },
+      { timeout: 15000 },
+    )
+    .toBe("try");
+}
+
 test("E9d: model gate — Continue absent until a model is downloaded AND active", async ({
   page,
 }) => {
@@ -81,8 +106,7 @@ test("E9d: model gate — Continue absent until a model is downloaded AND active
 
   await page.getByTestId("pick-quickstart").click();
   // Download simulates, activates, then the verified gate opens.
-  await expect(page.getByTestId("onboarding-next")).toBeVisible({ timeout: 10000 });
-  await page.getByTestId("onboarding-next").click();
+  await continueToTry(page);
   await expect(wizard).toHaveAttribute("data-step", "try");
 });
 
@@ -99,8 +123,7 @@ test("E9e: resume opens at the first unmet gate; Finish completes exactly once",
   await page.evaluate(() => window.__mock!.grant("menubar"));
   await expect(wizard).toHaveAttribute("data-step", "model", { timeout: 5000 });
   await page.getByTestId("pick-quickstart").click();
-  await expect(page.getByTestId("onboarding-next")).toBeVisible({ timeout: 10000 });
-  await page.getByTestId("onboarding-next").click();
+  await continueToTry(page);
 
   // Try-it readiness panel is all green, then Finish.
   await expect(wizard).toHaveAttribute("data-step", "try");
