@@ -1,7 +1,7 @@
 //! App settings — JSON persisted in the app data dir (SPEC FR-6).
 //! Corrupt or missing settings must fall back to defaults without crashing.
 
-use crate::cleanup::DEFAULT_FILLERS;
+use crate::cleanup::{DictionaryEntry, DEFAULT_FILLERS};
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -68,6 +68,15 @@ pub struct Settings {
     pub overlay_effect: String,
     /// Overlay theme id — built-in id or `user:<file>` (SPEC6).
     pub overlay_theme: String,
+    /// Ask before pasting when focus moved to a different app mid-dictation
+    /// (SPEC7 FR-G6, default on).
+    pub focus_guard: bool,
+    /// Audible tick/click on recording start and text delivery (SPEC7 FR-C3,
+    /// default off).
+    pub sound_cues: bool,
+    /// Personal dictionary: literal whole-word replacements applied to every
+    /// transcript (SPEC7 FR-D).
+    pub dictionary: Vec<DictionaryEntry>,
     pub filler_words: Vec<String>,
     pub enhancement: EnhancementSettings,
     /// Registry id of the active model; None until the user picks one.
@@ -91,6 +100,9 @@ impl Default for Settings {
             live_transcription: true,
             overlay_effect: "classic-bars".into(),
             overlay_theme: "indigo".into(),
+            focus_guard: true,
+            sound_cues: false,
+            dictionary: Vec::new(),
             filler_words: DEFAULT_FILLERS.iter().map(|s| s.to_string()).collect(),
             enhancement: EnhancementSettings::default(),
             active_model: None,
@@ -144,6 +156,7 @@ impl Settings {
         crate::cleanup::CleanOptions {
             fillers: self.filler_words.clone(),
             collapse_repeats: self.collapse_repeats,
+            dictionary: self.dictionary.clone(),
         }
     }
 }
@@ -258,6 +271,39 @@ mod tests {
         incoming2.active_model = Some("stale-other-model".into());
         incoming2.preserve_server_owned(&current);
         assert_eq!(incoming2.active_model.as_deref(), Some("whisper-tiny"));
+    }
+
+    // R13 (settings half): legacy settings.json without the SPEC7 fields
+    // loads with the documented defaults.
+    #[test]
+    fn r13_legacy_json_defaults_new_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{"hotkey":"F19","collapse_repeats":false,"keep_history":true}"#,
+        )
+        .unwrap();
+        let loaded = Settings::load(&path);
+        assert!(loaded.focus_guard, "focus guard defaults ON");
+        assert!(!loaded.sound_cues, "sound cues default OFF");
+        assert!(loaded.dictionary.is_empty(), "dictionary defaults empty");
+        assert_eq!(loaded.hotkey, "F19", "legacy fields still honored");
+    }
+
+    #[test]
+    fn r13_dictionary_roundtrips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let mut s = Settings::default();
+        s.dictionary.push(crate::cleanup::DictionaryEntry {
+            from: "acme corp".into(),
+            to: "AcmeCorp".into(),
+        });
+        s.sound_cues = true;
+        s.focus_guard = false;
+        s.save(&path).unwrap();
+        assert_eq!(Settings::load(&path), s);
     }
 
     // R8: enhancement endpoint guard.

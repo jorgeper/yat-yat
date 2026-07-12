@@ -270,6 +270,7 @@ async function invoke(command: string, args?: Record<string, unknown>): Promise<
     case "retry_last_transcription":
     case "toggle_dictation":
     case "cancel_dictation":
+    case "resolve_focus_prompt":
       return;
     case "test_enhancement": {
       const sample = (args?.sample as string) || "";

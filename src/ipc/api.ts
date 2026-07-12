@@ -66,6 +66,8 @@ export const api = {
   retryLastTranscription: () => call<void>("retry_last_transcription"),
   toggleDictation: () => call<void>("toggle_dictation"),
   cancelDictation: () => call<void>("cancel_dictation"),
+  resolveFocusPrompt: (action: "paste" | "copy") =>
+    call<void>("resolve_focus_prompt", { action }),
   testEnhancement: (sample: string) => call<string>("test_enhancement", { sample }),
   listInputDevices: () => call<string[]>("list_input_devices"),
   startHotkeyCapture: () => call<void>("start_hotkey_capture"),

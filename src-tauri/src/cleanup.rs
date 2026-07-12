@@ -7,11 +7,26 @@
 
 use once_cell::sync::Lazy;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
 /// Default filler-word list (SPEC §4.1). User-editable via settings.
 pub const DEFAULT_FILLERS: &[&str] = &[
     "uh", "um", "uhm", "umm", "uhh", "hmm", "hm", "mm", "mmm", "mhm", "er", "erm", "ah", "eh",
 ];
+
+/// Personal-dictionary caps (SPEC7 FR-D1): entries past these are ignored
+/// with a warning, never a crash.
+pub const MAX_DICTIONARY_ENTRIES: usize = 200;
+pub const MAX_DICTIONARY_FIELD_CHARS: usize = 100;
+
+/// A personal-dictionary replacement (SPEC7 FR-D): `from` is a literal
+/// whole-word phrase (multi-word allowed, never regex), `to` is inserted
+/// verbatim.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct DictionaryEntry {
+    pub from: String,
+    pub to: String,
+}
 
 /// Non-speech artifact content emitted by STT models inside [] or ().
 static ARTIFACT_CONTENT: Lazy<Regex> = Lazy::new(|| {
@@ -29,6 +44,8 @@ pub struct CleanOptions {
     pub fillers: Vec<String>,
     /// Collapse immediately-repeated words ("the the" -> "the").
     pub collapse_repeats: bool,
+    /// Personal-dictionary replacements, applied last in list order (SPEC7 FR-D2).
+    pub dictionary: Vec<DictionaryEntry>,
 }
 
 impl Default for CleanOptions {
@@ -36,6 +53,7 @@ impl Default for CleanOptions {
         Self {
             fillers: DEFAULT_FILLERS.iter().map(|s| s.to_string()).collect(),
             collapse_repeats: true,
+            dictionary: Vec::new(),
         }
     }
 }
@@ -107,6 +125,48 @@ fn strip_artifacts(text: &str) -> String {
             }
         })
         .into_owned()
+}
+
+/// Apply the personal dictionary (SPEC7 FR-D2): each entry's `from` is a
+/// literal phrase matched case-insensitively on whole-word boundaries;
+/// `to` is inserted verbatim (no capture-group expansion). Entries apply in
+/// list order, each over the whole text. An empty dictionary is a no-op.
+fn apply_dictionary(text: &str, entries: &[DictionaryEntry]) -> String {
+    let mut out = text.to_string();
+    for (index, entry) in entries.iter().enumerate() {
+        if index >= MAX_DICTIONARY_ENTRIES {
+            log::warn!(
+                "personal dictionary capped at {MAX_DICTIONARY_ENTRIES} entries; the rest are ignored"
+            );
+            break;
+        }
+        let from = entry.from.trim();
+        if from.is_empty() {
+            continue;
+        }
+        if from.chars().count() > MAX_DICTIONARY_FIELD_CHARS
+            || entry.to.chars().count() > MAX_DICTIONARY_FIELD_CHARS
+        {
+            log::warn!("personal dictionary entry '{from}' exceeds the length cap; ignored");
+            continue;
+        }
+        // The phrase is escaped, so user input is never regex syntax. Word
+        // boundaries only bind next to word characters — a phrase edged in
+        // punctuation still matches literally.
+        let mut pattern = String::from("(?i)");
+        if from.chars().next().is_some_and(|c| c.is_alphanumeric()) {
+            pattern.push_str(r"\b");
+        }
+        pattern.push_str(&regex::escape(from));
+        if from.chars().last().is_some_and(|c| c.is_alphanumeric()) {
+            pattern.push_str(r"\b");
+        }
+        match Regex::new(&pattern) {
+            Ok(re) => out = re.replace_all(&out, regex::NoExpand(&entry.to)).into_owned(),
+            Err(e) => log::warn!("personal dictionary entry '{from}' unusable: {e}"),
+        }
+    }
+    out
 }
 
 pub fn clean(text: &str, opts: &CleanOptions) -> String {
@@ -188,12 +248,20 @@ pub fn clean(text: &str, opts: &CleanOptions) -> String {
         out.push(tok);
     }
 
-    out.iter()
+    let joined = out
+        .iter()
         .map(Token::render)
         .collect::<Vec<_>>()
         .join(" ")
         .trim()
-        .to_string()
+        .to_string();
+    // Dictionary runs last (SPEC7 FR-D2) so replacements see the final text —
+    // and enhancement, which runs after clean(), sees the corrected names.
+    if opts.dictionary.is_empty() {
+        joined
+    } else {
+        apply_dictionary(&joined, &opts.dictionary)
+    }
 }
 
 #[cfg(test)]
@@ -239,7 +307,7 @@ mod tests {
     fn r1_custom_filler_list() {
         let opts = CleanOptions {
             fillers: vec!["like".into()],
-            collapse_repeats: true,
+            ..Default::default()
         };
         assert_eq!(clean("it was like huge", &opts), "it was huge");
         // Default fillers no longer stripped with a custom list.
@@ -314,5 +382,128 @@ mod tests {
     fn r4_unicode_safe() {
         assert_eq!(c("café um münchen"), "café münchen");
         assert_eq!(c("um über alles"), "Über alles");
+    }
+
+    // R12: personal dictionary (SPEC7 FR-D).
+    fn dict(entries: &[(&str, &str)]) -> CleanOptions {
+        CleanOptions {
+            dictionary: entries
+                .iter()
+                .map(|(from, to)| DictionaryEntry {
+                    from: (*from).into(),
+                    to: (*to).into(),
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn r12_case_insensitive_whole_word_replacement() {
+        let opts = dict(&[("acme corp", "AcmeCorp")]);
+        assert_eq!(clean("I emailed acme corp today", &opts), "I emailed AcmeCorp today");
+        assert_eq!(clean("ACME CORP rocks", &opts), "AcmeCorp rocks");
+    }
+
+    #[test]
+    fn r12_multi_word_phrase() {
+        let opts = dict(&[("jorge pereira", "Jorge Pereira")]);
+        assert_eq!(
+            clean("send it to jorge pereira please", &opts),
+            "send it to Jorge Pereira please"
+        );
+    }
+
+    #[test]
+    fn r12_no_partial_word_match() {
+        let opts = dict(&[("cat", "feline")]);
+        assert_eq!(clean("the catalog lists a cat", &opts), "the catalog lists a feline");
+        assert_eq!(clean("concatenate the strings", &opts), "concatenate the strings");
+    }
+
+    #[test]
+    fn r12_from_is_literal_not_regex() {
+        // '.' and '(' in `from` must match literally, never as regex syntax.
+        let opts = dict(&[("node.js", "Node.js")]);
+        assert_eq!(clean("we use node.js here", &opts), "we use Node.js here");
+        assert_eq!(clean("a nodeXjs impostor", &opts), "a nodeXjs impostor");
+        let opts = dict(&[("c(x)", "c of x")]);
+        assert_eq!(clean("compute c(x) now", &opts), "compute c of x now");
+    }
+
+    #[test]
+    fn r12_replacement_is_literal_no_expansion() {
+        // '$' in `to` is inserted verbatim, never expanded as a capture group.
+        let opts = dict(&[("ten dollars", "$10")]);
+        assert_eq!(clean("that costs ten dollars now", &opts), "that costs $10 now");
+    }
+
+    #[test]
+    fn r12_entries_apply_in_list_order() {
+        let opts = dict(&[("alpha", "beta"), ("beta", "gamma")]);
+        // First entry rewrites, then the second sees its output.
+        assert_eq!(clean("alpha", &opts), "gamma");
+    }
+
+    #[test]
+    fn r12_blank_from_entries_are_ignored() {
+        let opts = dict(&[("", "nope"), ("   ", "nope"), ("ok", "fine")]);
+        assert_eq!(clean("all ok here", &opts), "all fine here");
+    }
+
+    #[test]
+    fn r12_caps_enforced() {
+        // Entry #201 is ignored (SPEC7 FR-D1).
+        let mut entries: Vec<(String, String)> = (0..MAX_DICTIONARY_ENTRIES)
+            .map(|i| (format!("inert{i}"), format!("unused{i}")))
+            .collect();
+        entries.push(("target".into(), "replaced".into()));
+        let opts = CleanOptions {
+            dictionary: entries
+                .into_iter()
+                .map(|(from, to)| DictionaryEntry { from, to })
+                .collect(),
+            ..Default::default()
+        };
+        assert_eq!(clean("the target stands", &opts), "the target stands");
+
+        // Over-long `from`/`to` fields are ignored, not truncated.
+        let long = "x".repeat(MAX_DICTIONARY_FIELD_CHARS + 1);
+        let opts = dict(&[(long.as_str(), "short")]);
+        assert_eq!(clean(&format!("keep {long} intact"), &opts), format!("keep {long} intact"));
+    }
+
+    #[test]
+    fn r12_empty_dictionary_is_identity() {
+        // Byte-identical to the non-dictionary pipeline output.
+        let text = "so um the the plan (coughs) is fine";
+        assert_eq!(clean(text, &dict(&[])), c(text));
+    }
+
+    #[test]
+    fn r12_runs_after_fillers_and_repeats() {
+        // The phrase only assembles once fillers are stripped from its middle.
+        let opts = dict(&[("jorge pereira", "Jorge Pereira")]);
+        assert_eq!(
+            clean("email jorge um pereira now", &opts),
+            "email Jorge Pereira now"
+        );
+        // Consequence of the SPEC7 FR-D2 ordering: repeat collapsing runs
+        // FIRST, so a phrase made of an immediately repeated word ("yat yat")
+        // has already collapsed to one word by dictionary time and cannot
+        // match while collapse_repeats is on.
+        let opts = CleanOptions {
+            dictionary: vec![DictionaryEntry {
+                from: "yat yat".into(),
+                to: "Yat Yat".into(),
+            }],
+            ..Default::default()
+        };
+        assert_eq!(clean("open yat yat now", &opts), "open yat now");
+        let opts = CleanOptions {
+            collapse_repeats: false,
+            ..opts
+        };
+        assert_eq!(clean("open yat yat now", &opts), "open Yat Yat now");
     }
 }

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { api } from "../ipc/api";
 import type { Settings } from "../ipc/types";
 import { DEFAULT_ENHANCEMENT } from "../ipc/types";
+import { addEntry, removeEntry, updateEntry } from "../lib/dictionary";
 import { addFiller, removeFiller, resetFillers } from "../lib/fillers";
 import { Toggle } from "./SettingsApp";
 
@@ -16,9 +17,27 @@ export default function CleanupSection({
   save: (s: Settings) => Promise<void>;
 }) {
   const [newWord, setNewWord] = useState("");
+  const [newFrom, setNewFrom] = useState("");
+  const [newTo, setNewTo] = useState("");
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [testing, setTesting] = useState(false);
   const [endpointError, setEndpointError] = useState<string | null>(null);
+
+  const submitEntry = () => {
+    const next = addEntry(settings.dictionary, newFrom, newTo);
+    if (next !== settings.dictionary) {
+      save({ ...settings, dictionary: next });
+      setNewFrom("");
+      setNewTo("");
+    }
+  };
+
+  const commitEntry = (index: number, patch: { from?: string; to?: string }) => {
+    const next = updateEntry(settings.dictionary, index, patch);
+    if (next !== settings.dictionary) {
+      save({ ...settings, dictionary: next });
+    }
+  };
 
   const submitWord = () => {
     const next = addFiller(settings.filler_words, newWord);
@@ -100,6 +119,65 @@ export default function CleanupSection({
             testId="collapse-repeats"
             onChange={(v) => save({ ...settings, collapse_repeats: v })}
           />
+        </div>
+      </div>
+
+      <div className="section-title">Personal dictionary</div>
+      <div className="card">
+        <div className="row-sub" style={{ marginBottom: 8 }}>
+          Words or phrases the model keeps getting wrong, replaced in every transcript —
+          names, jargon, product names. Matches whole words, any capitalization.
+        </div>
+        <div data-testid="dictionary-table">
+          {settings.dictionary.map((entry, i) => (
+            <div className="row dict-row" data-testid="dict-row" key={`${i}-${entry.from}-${entry.to}`}>
+              <input
+                type="text"
+                aria-label="Heard"
+                data-testid={`dict-from-${i}`}
+                defaultValue={entry.from}
+                onBlur={(e) => commitEntry(i, { from: e.target.value })}
+              />
+              <span className="dict-arrow">→</span>
+              <input
+                type="text"
+                aria-label="Replace with"
+                data-testid={`dict-to-${i}`}
+                defaultValue={entry.to}
+                onBlur={(e) => commitEntry(i, { to: e.target.value })}
+              />
+              <button
+                className="btn"
+                aria-label={`Remove ${entry.from}`}
+                data-testid={`dict-delete-${i}`}
+                onClick={() => save({ ...settings, dictionary: removeEntry(settings.dictionary, i) })}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="row dict-row">
+          <input
+            type="text"
+            placeholder="Heard…"
+            data-testid="dict-new-from"
+            value={newFrom}
+            onChange={(e) => setNewFrom(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submitEntry()}
+          />
+          <span className="dict-arrow">→</span>
+          <input
+            type="text"
+            placeholder="Replace with…"
+            data-testid="dict-new-to"
+            value={newTo}
+            onChange={(e) => setNewTo(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submitEntry()}
+          />
+          <button className="btn" data-testid="dict-add" onClick={submitEntry}>
+            Add
+          </button>
         </div>
       </div>
 

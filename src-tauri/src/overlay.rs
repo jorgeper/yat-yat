@@ -14,14 +14,18 @@ pub const OVERLAY_HEIGHT: f64 = 64.0;
 /// Taller pill for live transcription (SPEC3 FR-L3): text above the waveform.
 pub const OVERLAY_LIVE_WIDTH: f64 = 420.0;
 pub const OVERLAY_LIVE_HEIGHT: f64 = 110.0;
+/// Wider pill for the focus-guard prompt (SPEC7 FR-G3): question + 2 buttons.
+pub const OVERLAY_FOCUS_WIDTH: f64 = 460.0;
 const BOTTOM_OFFSET: f64 = 24.0;
 
-/// Overlay states rendered by the frontend pill (SPEC FR-1.6, FR-2, FR-3.4).
+/// Overlay states rendered by the frontend pill (SPEC FR-1.6, FR-2, FR-3.4,
+/// SPEC7 FR-G3).
 pub mod state {
     pub const RECORDING: &str = "recording";
     pub const TRANSCRIBING: &str = "transcribing";
     pub const NOTHING_HEARD: &str = "nothing-heard";
     pub const NO_MODEL: &str = "no-model";
+    pub const FOCUS_CHANGED: &str = "focus-changed";
 }
 
 static OVERLAY_VISIBLE: AtomicBool = AtomicBool::new(false);
@@ -34,6 +38,11 @@ struct ShowPayload {
     live: bool,
     effect: String,
     theme: String,
+    /// App names for the focus-guard prompt (SPEC7 FR-G3); absent elsewhere.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from_app: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    to_app: Option<String>,
 }
 
 #[cfg(target_os = "macos")]
@@ -138,10 +147,35 @@ pub fn show_state(app: &AppHandle, state: &str) {
 /// Show the overlay; `live` selects the taller live-transcription pill for
 /// the recording state (SPEC3 FR-L3).
 pub fn show_state_with_mode(app: &AppHandle, state: &str, live: bool) {
+    show_internal(app, state, live, None, None);
+}
+
+/// The focus-guard prompt (SPEC7 FR-G3): "Started in {from} — paste into
+/// {to}?" with Paste / Copy only buttons. No auto-dismiss here — the pipeline
+/// owns the 10 s timeout and its clipboard fallback.
+pub fn show_focus_prompt(app: &AppHandle, from_app: &str, to_app: &str) {
+    show_internal(
+        app,
+        state::FOCUS_CHANGED,
+        false,
+        Some(from_app.to_string()),
+        Some(to_app.to_string()),
+    );
+}
+
+fn show_internal(
+    app: &AppHandle,
+    state: &str,
+    live: bool,
+    from_app: Option<String>,
+    to_app: Option<String>,
+) {
     let generation = SHOW_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let live = live && state == state::RECORDING;
     let (width, height) = if live {
         (OVERLAY_LIVE_WIDTH, OVERLAY_LIVE_HEIGHT)
+    } else if state == state::FOCUS_CHANGED {
+        (OVERLAY_FOCUS_WIDTH, OVERLAY_HEIGHT)
     } else {
         (OVERLAY_WIDTH, OVERLAY_HEIGHT)
     };
@@ -168,6 +202,8 @@ pub fn show_state_with_mode(app: &AppHandle, state: &str, live: bool) {
                 live,
                 effect,
                 theme,
+                from_app,
+                to_app,
             },
         );
     }

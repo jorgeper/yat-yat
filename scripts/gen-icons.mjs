@@ -119,18 +119,24 @@ function micSdf(px, py, cx, cy, s, filled = true) {
   console.log("wrote src-tauri/icons/base-icon.png");
 }
 
-// --- Tray icons: 44x44 monochrome (black + alpha, rendered as template) ---
-function trayIcon(name, sdf) {
+// --- Tray icons: 44x44. Idle/processing are monochrome (black + alpha,
+// rendered as template); recording is a COLOR icon (SPEC7 FR-T1): mid-gray
+// mic (legible on light and dark menu bars) + red dot, rendered non-template.
+function trayIcon(name, sdf, color = () => [0, 0, 0]) {
   const S = 44;
-  const rgba = draw(S, S, sdf, () => [0, 0, 0]);
+  const rgba = draw(S, S, sdf, color);
   mkdirSync(join(root, "src-tauri/resources"), { recursive: true });
   writeFileSync(join(root, `src-tauri/resources/${name}`), encodePng(S, S, rgba));
   console.log(`wrote src-tauri/resources/${name}`);
 }
 
 trayIcon("tray-idle.png", (px, py) => micSdf(px, py, 22, 21, 30));
-trayIcon("tray-recording.png", (px, py) =>
-  union(micSdf(px, py, 22, 21, 30), sdCircle(px, py, 35, 9, 6)),
+trayIcon(
+  "tray-recording.png",
+  (px, py) => union(micSdf(px, py, 22, 21, 30), sdCircle(px, py, 35, 9, 6)),
+  // Pixels belonging to the dot (with a little slack so the anti-aliased rim
+  // stays red) get system red; the mic glyph gets mid-gray.
+  (x, y) => (sdCircle(x + 0.5, y + 0.5, 35, 9, 6.9) <= 0 ? [255, 59, 48] : [110, 110, 115]),
 );
 trayIcon("tray-processing.png", (px, py) =>
   union(

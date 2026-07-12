@@ -16,14 +16,29 @@ whatever app has focus.
 ## How it works
 
 1. Press **Right ⌘** (configurable, bare modifier keys supported). A small pill
-   appears with a live waveform — the app you're typing in keeps focus.
+   appears with a live waveform — the app you're typing in keeps focus. While
+   recording, the menu-bar mic carries a **red dot** so there's always an
+   ambient "mic is live" indicator, and an optional sound cue (Settings →
+   General, off by default) ticks on start and clicks when text is delivered.
 2. Talk. Press the hotkey again (or use hold-to-talk mode). `Esc` cancels.
 3. The transcript is cleaned — filler words (`um`, `uh`, …), bracketed noise
-   tags, and stuttered repeats are stripped — and pasted at your cursor. Your
-   previous clipboard contents are restored right after.
+   tags, and stuttered repeats are stripped, and your personal dictionary is
+   applied — and pasted at your cursor. Your previous clipboard contents are
+   restored right after.
+
+**Focus guard.** If you switch apps mid-dictation (start in Terminal, ⌘-tab
+to Slack while talking), Yat Yat notices that the frontmost app changed and
+asks before pasting: *"Started in Terminal — paste into Slack?"* with
+**Paste** and **Copy only** buttons (pressing the hotkey again also confirms
+the paste; `Esc` dismisses). An unanswered prompt falls back to
+copy-to-clipboard after 10 seconds — and whatever happens, the transcript is
+already in History, so nothing is ever lost. The guard fails open (any
+uncertainty means a normal paste) and can be turned off in Settings →
+General → "Ask before pasting into a different app".
 
 The menu-bar icon gives you: start/stop dictation, copy or retry the last
-transcription, your five most recent transcriptions, and Settings.
+transcription, your five most recent transcriptions, and Settings. The icon
+itself shows state — idle, **recording (red dot)**, and processing.
 
 ## Looks
 
@@ -58,6 +73,18 @@ Yat Yat ships no models; pick one in Settings → Models (or during onboarding):
 The catalog is data-driven: adding a model is one new entry in
 `src-tauri/models.json` (id, engine family, URL, SHA-256, size) — no code
 changes.
+
+## Personal dictionary
+
+Settings → Cleanup has a personal dictionary: words or phrases the model
+keeps getting wrong, replaced in every transcript — names, jargon, product
+names ("jorge pereira" → "Jorge Pereira"). Matching is literal whole words,
+any capitalization, multi-word phrases included; entries apply everywhere the
+cleanup pipeline runs (normal dictation, Retry, and before optional AI
+enhancement, so the enhancer sees corrected names too). One note: the
+dictionary runs after repeated-word collapsing, so a phrase made of an
+immediately repeated word ("yat yat") only matches if "Collapse repeated
+words" is off.
 
 ## Optional AI enhancement (still local)
 

@@ -731,6 +731,48 @@ body.overlay-body {
   background: rgba(255, 255, 255, 0.22);
 }
 
+/* Focus-guard prompt (SPEC7 FR-G3): question + Paste / Copy only */
+.focus-prompt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.focus-question {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-question strong {
+  font-weight: 700;
+}
+
+.focus-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Personal dictionary table (SPEC7 FR-D3) */
+.dict-row {
+  gap: 8px;
+}
+
+.dict-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.dict-arrow {
+  color: rgba(128, 128, 140, 0.9);
+  flex-shrink: 0;
+}
+
 /* Transcribing shimmer: the wave keeps its bars but they breathe in sequence */
 .wave.thinking i {
   animation: think 1.1s ease-in-out infinite;

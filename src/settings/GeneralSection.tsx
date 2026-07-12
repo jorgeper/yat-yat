@@ -81,6 +81,33 @@ export default function GeneralSection({
         </div>
         <div className="row">
           <div>
+            <div className="row-label">Ask before pasting into a different app</div>
+            <div className="row-sub">
+              If you switch apps mid-dictation, Yat Yat asks where the text should go instead
+              of pasting blindly.
+            </div>
+          </div>
+          <Toggle
+            checked={settings.focus_guard}
+            testId="focus-guard"
+            onChange={(v) => save({ ...settings, focus_guard: v })}
+          />
+        </div>
+        <div className="row">
+          <div>
+            <div className="row-label">Sound cues</div>
+            <div className="row-sub">
+              A soft tick when recording starts and a click when your text is delivered.
+            </div>
+          </div>
+          <Toggle
+            checked={settings.sound_cues}
+            testId="sound-cues"
+            onChange={(v) => save({ ...settings, sound_cues: v })}
+          />
+        </div>
+        <div className="row">
+          <div>
             <div className="row-label">Output</div>
             <div className="row-sub">Where the finished transcription goes.</div>
           </div>

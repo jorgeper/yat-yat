@@ -1,6 +1,7 @@
-// The overlay pill (SPEC FR-2 + FR-1.6). States: recording (live waveform +
-// timer), transcribing (thinking shimmer), nothing-heard, no-model (Choose
-// Model button). Driven entirely by events from the Rust side (or the mock).
+// The overlay pill (SPEC FR-2 + FR-1.6 + SPEC7 FR-G3). States: recording
+// (live waveform + timer), transcribing (thinking shimmer), nothing-heard,
+// no-model (Choose Model button), focus-changed (paste-target prompt).
+// Driven entirely by events from the Rust side (or the mock).
 
 import { useEffect, useRef, useState } from "react";
 import { api, listen } from "../ipc/api";
@@ -9,18 +10,21 @@ import { BAR_COUNT } from "../lib/waveform";
 import { applyTheme } from "./applyTheme";
 import { EffectEngine } from "./effects/engine";
 import { DEFAULT_EFFECT, getEffect } from "./effects";
+import FocusPrompt from "./FocusPrompt";
 
 type OverlayState =
   | "hidden"
   | "recording"
   | "transcribing"
   | "nothing-heard"
-  | "no-model";
+  | "no-model"
+  | "focus-changed";
 
 export default function OverlayApp() {
   const [state, setState] = useState<OverlayState>("hidden");
   const [live, setLive] = useState(false);
   const [effect, setEffect] = useState(DEFAULT_EFFECT);
+  const [focusApps, setFocusApps] = useState<{ from: string; to: string }>({ from: "", to: "" });
   const [liveText, setLiveText] = useState<LiveText>(EMPTY_LIVE);
   const [elapsed, setElapsed] = useState(0);
   const [overflowing, setOverflowing] = useState(false);
@@ -43,15 +47,25 @@ export default function OverlayApp() {
     const unlisteners: Array<() => void> = [];
     (async () => {
       unlisteners.push(
-        await listen<{ state: string; live?: boolean; effect?: string; theme?: string }>(
+        await listen<{
+          state: string;
+          live?: boolean;
+          effect?: string;
+          theme?: string;
+          from_app?: string;
+          to_app?: string;
+        }>(
           "show-overlay",
-          ({ state, live, effect, theme }) => {
+          ({ state, live, effect, theme, from_app, to_app }) => {
             if (state === "recording") {
               startedRef.current = Date.now();
               setElapsed(0);
               // New recording: reset the stabilizer (SPEC3 FR-L4).
               liveTextRef.current = EMPTY_LIVE;
               setLiveText(EMPTY_LIVE);
+            }
+            if (state === "focus-changed") {
+              setFocusApps({ from: from_app ?? "", to: to_app ?? "" });
             }
             if (effect) setEffect(effect);
             if (theme !== undefined) applyTheme(theme);
@@ -93,6 +107,18 @@ export default function OverlayApp() {
       500,
     );
     return () => clearInterval(timer);
+  }, [state]);
+
+  // Esc dismisses the focus prompt (SPEC7 FR-G3). In the real app the global
+  // Esc hotkey reaches the pipeline through Rust (the panel never has key
+  // focus); this listener covers the browser shim the E2E suite drives.
+  useEffect(() => {
+    if (state !== "focus-changed") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") api.cancelDictation();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [state]);
 
   // Fade the top edge only when the text really wraps past the visible area
@@ -167,6 +193,14 @@ export default function OverlayApp() {
         </div>
       )}
       {state === "nothing-heard" && <span className="pill-label">Nothing heard</span>}
+      {state === "focus-changed" && (
+        <FocusPrompt
+          fromApp={focusApps.from}
+          toApp={focusApps.to}
+          onPaste={() => api.resolveFocusPrompt("paste")}
+          onCopy={() => api.resolveFocusPrompt("copy")}
+        />
+      )}
       {state === "no-model" && (
         <>
           <span className="pill-label">Pick a model to start dictating</span>

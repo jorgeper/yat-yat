@@ -20,8 +20,10 @@ Right ⌘ (handy-keys event tap)
 
 | Module | One purpose | Key tests |
 | --- | --- | --- |
-| `cleanup.rs` | Pure transcript filter (`clean(text, opts)`) | R1–R4 |
-| `settings.rs` | Settings JSON + localhost endpoint guard | R5, R8 |
+| `cleanup.rs` | Pure transcript filter (`clean(text, opts)`) + personal dictionary | R1–R4, R12 |
+| `settings.rs` | Settings JSON + localhost endpoint guard | R5, R8, R13 |
+| `focus.rs` | Frontmost-app capture + pure focus-guard decision | R13 |
+| `sounds.rs` | Sound cues: async afplay, never on the timing path | manual |
 | `registry.rs` | Data-driven model catalog (`models.json`) | R7 |
 | `history.rs` | 20-entry ring buffer + retained last WAV | R6 |
 | `audio.rs` | cpal capture worker thread, resampling, WAV IO | resample/WAV tests |
@@ -55,6 +57,8 @@ platform-specific seams, each isolated in one place:
 | Hotkey backend | handy-keys event tap (Accessibility) | handy-keys `WH_KEYBOARD_LL` hook (no permission needed) — same API |
 | Permissions | `tauri-plugin-macos-permissions` + onboarding step | step is skipped on non-mac (`Onboarding.tsx` builds the step list per platform) |
 | Menu-bar-only | `Info.plist` `LSUIElement` | `skipTaskbar` on windows + tray only |
+| Frontmost app (focus guard) | `focus.rs`: NSWorkspace via main thread | same fn, `GetForegroundWindow` + process name; stub currently returns `None` (guard off) |
+| Sound cues | `sounds.rs`: spawn `afplay` | same fn, `PlaySoundW` with `SND_ASYNC`; stub currently no-op |
 | Whisper accel | `whisper-metal` feature | swap to `whisper-vulkan` feature in Cargo target table |
 
 Remaining Windows work is packaging (MSI/NSIS via `tauri build`), not code.
@@ -142,6 +146,36 @@ src-tauri/src/themes.rs, R11) loaded through `list_user_themes`.
 webview needs an IPC-less sandbox and a frozen API. The renderer interface
 above IS that API surface — if plugins ever land, they implement the same
 contract inside a sandboxed frame, and nothing here changes.
+
+## Focus guard (SPEC7)
+
+Never paste into the wrong app silently. `focus.rs` is the platform boundary
+for frontmost-application queries: on macOS it asks NSWorkspace (raw
+`msg_send!`, marshalled to the main thread like tray_probe); the non-mac stub
+returns `None`, which disables the guard entirely — the Windows port point is
+`GetForegroundWindow` + process name in the same function.
+
+The flow: `start_recording` captures the frontmost app (the overlay panel is
+non-activating, so frontmost-at-hotkey IS the paste target) into
+`AppState::dictation_start_app`. After STT + cleanup + enhancement —
+immediately before delivery, exactly the window where users ⌘-tab away — the
+pipeline re-reads the frontmost app and feeds both into the **pure decision
+function** `focus::decide(enabled, output_method, started, current)` (R13
+table-tests it). Same bundle id, any `None`, clipboard-only output, or the
+setting off → deliver as always. Mismatch → the transcript parks in
+`AppState::pending_paste`, the overlay shows the `focus-changed` prompt, and
+**the pipeline thread returns to its message loop** (`AwaitFocusConfirm`
+stage) — it never blocks on the human. Resolution arrives as ordinary
+pipeline messages: the overlay buttons (`resolve_focus_prompt` IPC), the
+dictation hotkey (= paste), Esc (= dismiss), a 10 s timeout or a preempting
+new dictation (= copy + notify). History and last-transcription are recorded
+*before* the decision, so every outcome keeps the text. The confirmed paste
+re-checks nothing — the user just pointed at the target.
+
+Sound cues (`sounds.rs`, same platform-boundary pattern) and the red
+recording tray dot (`tray.rs` renders the recording state non-template) are
+the other SPEC7 surfaces; cue playback is spawn-and-forget (`afplay`), never
+on the dictation path's critical timing.
 
 ## Design notes
 

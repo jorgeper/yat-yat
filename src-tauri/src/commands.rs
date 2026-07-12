@@ -290,6 +290,19 @@ pub fn cancel_dictation(state: State<AppState>) {
     state.pipeline.cancel();
 }
 
+/// SPEC7 FR-G3: the focus-guard prompt's buttons. "paste" delivers to the
+/// now-frontmost app; "copy" leaves the text on the clipboard.
+#[tauri::command]
+pub fn resolve_focus_prompt(state: State<AppState>, action: String) -> CmdResult<()> {
+    let action = match action.as_str() {
+        "paste" => crate::pipeline::FocusAction::Paste,
+        "copy" => crate::pipeline::FocusAction::Copy,
+        other => return Err(format!("unknown focus action '{other}'")),
+    };
+    state.pipeline.focus_resolve(action);
+    Ok(())
+}
+
 pub fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
     tauri::generate_handler![
         get_settings,
@@ -315,5 +328,6 @@ pub fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
         tray_item_visible,
         open_menu_bar_settings,
         list_user_themes,
+        resolve_focus_prompt,
     ]
 }

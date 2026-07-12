@@ -151,7 +151,10 @@ pub fn set_state(app: &AppHandle, state: TrayState) {
         if let Ok(path) = icon_path(app, state) {
             if let Ok(icon) = tauri::image::Image::from_path(path) {
                 let _ = tray.set_icon(Some(icon));
-                let _ = tray.set_icon_as_template(true);
+                // SPEC7 FR-T1: the recording icon carries a red dot, so it
+                // renders as-is (non-template); idle/processing stay template
+                // to adapt to the menu-bar appearance.
+                let _ = tray.set_icon_as_template(state != TrayState::Recording);
             }
         }
         if let Ok(menu) = build_menu(app, state) {

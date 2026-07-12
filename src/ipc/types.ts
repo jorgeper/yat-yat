@@ -11,6 +11,12 @@ export interface EnhancementSettings {
   prompt: string;
 }
 
+// SPEC7 FR-D: a literal whole-word replacement ("heard" -> "replace with").
+export interface DictionaryEntry {
+  from: string;
+  to: string;
+}
+
 export interface Settings {
   hotkey: string;
   activation_mode: ActivationMode;
@@ -22,6 +28,9 @@ export interface Settings {
   live_transcription: boolean;
   overlay_effect: string;
   overlay_theme: string;
+  focus_guard: boolean;
+  sound_cues: boolean;
+  dictionary: DictionaryEntry[];
   filler_words: string[];
   enhancement: EnhancementSettings;
   active_model: string | null;
@@ -111,6 +120,9 @@ export function defaultSettings(): Settings {
     live_transcription: true,
     overlay_effect: "classic-bars",
     overlay_theme: "indigo",
+    focus_guard: true,
+    sound_cues: false,
+    dictionary: [],
     filler_words: [...DEFAULT_FILLERS],
     enhancement: { ...DEFAULT_ENHANCEMENT },
     active_model: null,

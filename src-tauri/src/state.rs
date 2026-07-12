@@ -19,6 +19,11 @@ pub struct AppState {
     pub registry: Registry,
     pub history: Mutex<HistoryStore>,
     pub last_transcription: Mutex<Option<String>>,
+    /// Frontmost app when the current dictation started (SPEC7 FR-G1).
+    pub dictation_start_app: Mutex<Option<crate::focus::FrontmostApp>>,
+    /// Transcript held while the focus-guard prompt is up (SPEC7 FR-G5); the
+    /// pipeline never blocks on the human — resolution comes back as an event.
+    pub pending_paste: Mutex<Option<String>>,
     pub recorder: AudioRecorder,
     pub pipeline: Pipeline,
     pub paster: Mutex<Paster>,
@@ -44,6 +49,8 @@ impl AppState {
             registry,
             history: Mutex::new(history),
             last_transcription: Mutex::new(None),
+            dictation_start_app: Mutex::new(None),
+            pending_paste: Mutex::new(None),
             recorder,
             pipeline,
             paster: Mutex::new(Paster::new()),
