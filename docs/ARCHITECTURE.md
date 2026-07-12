@@ -217,6 +217,34 @@ a `latest.json` composed by `scripts/updater-manifest.mjs` (pure core,
 U14); publishing a release advances the rolling `updater` release that the
 fixed endpoint points at (`updater-manifest.yml`).
 
+## Uninstall & eggs (SPEC11)
+
+`uninstall.rs` splits uninstall into a pure, R15-tested plan
+(`uninstall_plan` — the exact items with sizes, mirroring
+scripts/deep-clean.sh; drift between the two is a bug) and best-effort
+execution: autostart off → delete plan items → `tccutil reset` for our own
+Accessibility/Microphone entries → the bundle goes to the **Trash** (never
+a hard delete of a running app) → exit. Windows hands off to the NSIS
+uninstaller, whose `windows/hooks.nsh` POSTUNINSTALL hook clears app data.
+
+The easter eggs (dance wiggle, Konami → Yat95, sleepy waveform) are
+cosmetic-only by contract: pure helpers in `src/lib/eggs.ts`
+(U16–U18-tested), CSS animations that respect prefers-reduced-motion, and
+zero contact with the recording/cleanup/paste paths. The Yat95 theme lives
+outside the built-in registry (`secret:yat95` in
+`src/overlay/secretTheme.ts`) so the 12-theme picker contract stands.
+
+SPEC12 divergence from SPEC11 §5.1: the wiggle egg's trigger is **"dance"**,
+not "yat yat" — Whisper never transcribes the non-word "yat" (measured with
+the release CLI on synthesized speech: it hears "that you add" / "that yet" /
+"you're at"), so the documented trigger could never fire. The wiggle also
+reaches the menu-bar icon now: `wiggle_tray` (mirrored in the mock) steps
+the tray through pre-rotated template frames from `scripts/gen-icons.mjs`
+and restores the pipeline's current state icon, ignoring re-entrant calls.
+A single `easter_eggs` setting (default ON, R17) gates all three eggs; the
+overlay re-reads it at each recording start, and the command re-checks it
+server-side.
+
 ## Design notes
 
 - **One pipeline thread** serializes Idle→Recording→Processing, so double

@@ -8,6 +8,7 @@ import type { Settings, UserTheme } from "../ipc/types";
 import { EFFECTS } from "../overlay/effects";
 import { EffectEngine } from "../overlay/effects/engine";
 import { getBuiltinTheme, THEMES } from "../overlay/themes";
+import { secretThemeCss } from "../overlay/secretTheme";
 
 const PREVIEW_STYLE_ID = "nh-preview-theme-style";
 
@@ -42,7 +43,10 @@ export default function AppearanceSection({
   // Resolve + apply the selected theme to the preview.
   useEffect(() => {
     const id = settings.overlay_theme;
-    if (id.startsWith("user:")) {
+    const secret = secretThemeCss(id);
+    if (secret) {
+      applyPreviewTheme(secret);
+    } else if (id.startsWith("user:")) {
       const user = userThemes.find((t) => t.id === id && !t.reason && t.css);
       applyPreviewTheme(user ? user.css : getBuiltinTheme("").css);
     } else {

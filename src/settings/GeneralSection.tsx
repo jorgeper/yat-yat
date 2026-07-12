@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { api } from "../ipc/api";
 import type { HistoryEntry, Settings } from "../ipc/types";
 import { Toggle } from "./SettingsApp";
+import UninstallDialog from "./UninstallDialog";
 
 export default function GeneralSection({
   settings,
@@ -21,6 +22,7 @@ export default function GeneralSection({
 }) {
   const [devices, setDevices] = useState<string[]>([]);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [uninstallOpen, setUninstallOpen] = useState(false);
 
   useEffect(() => {
     api.listInputDevices().then(setDevices).catch(console.error);
@@ -184,7 +186,35 @@ export default function GeneralSection({
             Clear
           </button>
         </div>
+        <div className="row">
+          <div>
+            <div className="row-label">Easter eggs</div>
+            <div className="row-sub">Yat Yat has secrets.</div>
+          </div>
+          <Toggle
+            checked={settings.easter_eggs}
+            testId="eggs-toggle"
+            onChange={(v) => save({ ...settings, easter_eggs: v })}
+          />
+        </div>
+        <div className="row">
+          <div>
+            <div className="row-label">Uninstall Yat Yat…</div>
+            <div className="row-sub">
+              Removes the app and everything it stored — settings, history, and
+              downloaded models.
+            </div>
+          </div>
+          <button
+            className="btn danger"
+            data-testid="uninstall-open"
+            onClick={() => setUninstallOpen(true)}
+          >
+            Uninstall…
+          </button>
+        </div>
       </div>
+      {uninstallOpen && <UninstallDialog onClose={() => setUninstallOpen(false)} />}
 
       <div className="section-title">Recent transcriptions</div>
       <div className="card" data-testid="history-list">

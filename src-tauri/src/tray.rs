@@ -2,6 +2,7 @@
 //! rebuilt on every state/history change (menus are cheap; live mutation isn't).
 
 use crate::state::AppState;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Manager};
@@ -11,6 +12,29 @@ pub enum TrayState {
     Idle,
     Recording,
     Processing,
+}
+
+// The wiggle (SPEC12 §2) restores whatever state the pipeline last set —
+// tracked here because a wiggle can straddle a state change.
+static LAST_STATE: AtomicU8 = AtomicU8::new(0);
+static WIGGLING: AtomicBool = AtomicBool::new(false);
+
+impl TrayState {
+    fn to_u8(self) -> u8 {
+        match self {
+            TrayState::Idle => 0,
+            TrayState::Recording => 1,
+            TrayState::Processing => 2,
+        }
+    }
+
+    fn from_u8(v: u8) -> Self {
+        match v {
+            1 => TrayState::Recording,
+            2 => TrayState::Processing,
+            _ => TrayState::Idle,
+        }
+    }
 }
 
 fn icon_path(app: &AppHandle, state: TrayState) -> anyhow::Result<std::path::PathBuf> {
@@ -151,7 +175,46 @@ pub fn create(app: &AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn set_template_icon(app: &AppHandle, path: std::path::PathBuf) {
+    if let Some(tray) = app.try_state::<TrayIcon>() {
+        if let Ok(icon) = tauri::image::Image::from_path(path) {
+            let _ = tray.set_icon(Some(icon));
+            let _ = tray.set_icon_as_template(true);
+        }
+    }
+}
+
+/// Dance-egg tray wiggle (SPEC12 §2): step through the pre-rotated frames,
+/// then restore the icon for whatever state the pipeline last set. Cosmetic
+/// only — nothing else about the tray (menu, state) is touched. Re-entrant
+/// calls during a wiggle are ignored.
+pub fn wiggle(app: &AppHandle) {
+    if WIGGLING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    let _ = std::thread::Builder::new()
+        .name("tray-wiggle".into())
+        .spawn(move || {
+            for n in 1..=4u8 {
+                if let Ok(path) = app.path().resolve(
+                    format!("resources/tray-wiggle-{n}.png"),
+                    tauri::path::BaseDirectory::Resource,
+                ) {
+                    set_template_icon(&app, path);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(70));
+            }
+            let current = TrayState::from_u8(LAST_STATE.load(Ordering::SeqCst));
+            if let Ok(path) = icon_path(&app, current) {
+                set_template_icon(&app, path);
+            }
+            WIGGLING.store(false, Ordering::SeqCst);
+        });
+}
+
 pub fn set_state(app: &AppHandle, state: TrayState) {
+    LAST_STATE.store(state.to_u8(), Ordering::SeqCst);
     if let Some(tray) = app.try_state::<TrayIcon>() {
         if let Ok(path) = icon_path(app, state) {
             if let Ok(icon) = tauri::image::Image::from_path(path) {

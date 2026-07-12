@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, listen } from "../ipc/api";
+import { danceMatches, SleepTracker, SLEEP_LEVEL } from "../lib/eggs";
 import { EMPTY_LIVE, stabilize, type LiveText } from "../lib/liveText";
 import { BAR_COUNT } from "../lib/waveform";
 import { applyTheme } from "./applyTheme";
@@ -25,6 +26,18 @@ export default function OverlayApp() {
   const [live, setLive] = useState(false);
   const [effect, setEffect] = useState(DEFAULT_EFFECT);
   const [focusApps, setFocusApps] = useState<{ from: string; to: string }>({ from: "", to: "" });
+  // Easter eggs (SPEC11 §5, SPEC12) — cosmetic only: nothing here touches
+  // recording. The SPEC12 §3 switch gates all of them; the flag refreshes
+  // from settings at every recording start.
+  const [wiggling, setWiggling] = useState(false);
+  const [asleep, setAsleep] = useState(false);
+  const eggsRef = useRef(true);
+  const danceCountRef = useRef(0);
+  const sleepRef = useRef<SleepTracker | null>(null);
+  const reducedMotionRef = useRef(
+    typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
   const [liveText, setLiveText] = useState<LiveText>(EMPTY_LIVE);
   const [elapsed, setElapsed] = useState(0);
   const [overflowing, setOverflowing] = useState(false);
@@ -41,6 +54,7 @@ export default function OverlayApp() {
       .getSettings()
       .then((s) => {
         setEffect(s.overlay_effect || DEFAULT_EFFECT);
+        eggsRef.current = s.easter_eggs !== false;
         return applyTheme(s.overlay_theme || "");
       })
       .catch(() => applyTheme(""));
@@ -63,6 +77,17 @@ export default function OverlayApp() {
               // New recording: reset the stabilizer (SPEC3 FR-L4).
               liveTextRef.current = EMPTY_LIVE;
               setLiveText(EMPTY_LIVE);
+              // Eggs reset per recording; the switch re-reads too.
+              danceCountRef.current = 0;
+              setWiggling(false);
+              sleepRef.current = new SleepTracker(Date.now);
+              setAsleep(false);
+              api
+                .getSettings()
+                .then((s) => {
+                  eggsRef.current = s.easter_eggs !== false;
+                })
+                .catch(() => {});
             }
             if (state === "focus-changed") {
               setFocusApps({ from: from_app ?? "", to: to_app ?? "" });
@@ -76,10 +101,24 @@ export default function OverlayApp() {
         await listen("hide-overlay", () => setState("hidden")),
         await listen<number>("mic-level", (level) => {
           engineRef.current?.feed(level);
+          // Sleepy-waveform egg: any loud sample wakes instantly.
+          sleepRef.current?.feed(level);
+          if (level >= SLEEP_LEVEL) setAsleep(false);
         }),
         await listen<{ text: string }>("stream-text", ({ text }) => {
           liveTextRef.current = stabilize(liveTextRef.current, text);
           setLiveText(liveTextRef.current);
+          // "Dance" wiggle (SPEC12 §1–2): detected on the RAW stream text.
+          // Cosmetic only; reduced motion and the eggs switch suppress both
+          // the pill class and the tray call at the source.
+          const matches = danceMatches(text);
+          if (matches > danceCountRef.current) {
+            danceCountRef.current = matches;
+            if (!reducedMotionRef.current && eggsRef.current) {
+              setWiggling(true);
+              api.wiggleTray().catch(() => {});
+            }
+          }
         }),
       );
     })();
@@ -106,6 +145,19 @@ export default function OverlayApp() {
       () => setElapsed(Math.floor((Date.now() - startedRef.current) / 1000)),
       500,
     );
+    return () => clearInterval(timer);
+  }, [state]);
+
+  // Sleepy-waveform egg (SPEC11 §5.3): poll the tracker while recording.
+  // CSS-only — the engine and recording never notice.
+  useEffect(() => {
+    if (state !== "recording") {
+      setAsleep(false);
+      return;
+    }
+    const timer = setInterval(() => {
+      setAsleep(eggsRef.current && (sleepRef.current?.isAsleep() ?? false));
+    }, 500);
     return () => clearInterval(timer);
   }, [state]);
 
@@ -139,11 +191,16 @@ export default function OverlayApp() {
 
   return (
     <div
-      className={`pill nh-theme ${state !== "hidden" ? "visible" : ""} ${live ? "live" : ""}`}
+      className={`pill nh-theme ${state !== "hidden" ? "visible" : ""} ${live ? "live" : ""} ${
+        wiggling ? "pill-wiggle" : ""
+      } ${asleep ? "pill-asleep" : ""}`}
       data-testid="overlay-pill"
       data-state={state}
       data-live={live ? "true" : "false"}
       data-effect={getEffect(effect).id}
+      onAnimationEnd={(e) => {
+        if (e.animationName === "pill-wiggle") setWiggling(false);
+      }}
     >
       {state === "recording" && (
         <>
@@ -170,6 +227,11 @@ export default function OverlayApp() {
           )}
           <div className="pill-row">
             <span className="rec-dot" data-testid="rec-dot" />
+            {asleep && (
+              <span className="sleep-zzz" data-testid="sleep-zzz" aria-hidden>
+                💤
+              </span>
+            )}
             <canvas className="fx-canvas" data-testid="waveform" ref={canvasRef} />
             <span className="pill-timer" data-testid="timer">
               {mm}:{ss}

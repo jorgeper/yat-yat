@@ -16,6 +16,7 @@ pub mod registry;
 pub mod settings;
 pub mod sounds;
 pub mod state;
+pub mod uninstall;
 pub mod stt;
 pub mod themes;
 pub mod tray;

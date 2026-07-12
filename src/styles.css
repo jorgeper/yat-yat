@@ -643,6 +643,113 @@ button:focus-visible {
   transition: width 120ms ease;
 }
 
+/* ---------- Uninstall dialog (SPEC11) ---------- */
+
+.uninstall-items {
+  margin-bottom: 10px;
+}
+
+.uninstall-row {
+  font-size: 13px;
+}
+
+.uninstall-size {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+/* ---------- Easter eggs (SPEC11 §5 — cosmetic only) ---------- */
+
+.egg-toast {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 13px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+  z-index: 200;
+  animation: egg-toast-in 200ms ease;
+}
+
+@keyframes egg-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+}
+
+/* "Yat yat" acknowledgment: a quick happy wiggle. */
+.pill.pill-wiggle {
+  animation: pill-wiggle 600ms ease;
+}
+
+@keyframes pill-wiggle {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  20% {
+    transform: translateY(-6px) rotate(-2deg);
+  }
+  40% {
+    transform: translateY(0) rotate(2deg);
+  }
+  60% {
+    transform: translateY(-3px) rotate(-1deg);
+  }
+  80% {
+    transform: translateY(0) rotate(0.5deg);
+  }
+}
+
+/* Long silence: the waveform falls asleep. CSS only — the engine keeps
+   running underneath. */
+.pill.pill-asleep .fx-canvas {
+  transform: scaleY(0.25);
+  opacity: 0.45;
+  transition: transform 900ms ease, opacity 900ms ease;
+}
+
+.sleep-zzz {
+  position: absolute;
+  right: 84px;
+  bottom: 26px;
+  font-size: 13px;
+  pointer-events: none;
+  animation: zzz-drift 2.6s ease-in-out infinite;
+}
+
+@keyframes zzz-drift {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  25% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill.pill-wiggle {
+    animation: none;
+  }
+  .sleep-zzz {
+    animation: none;
+    opacity: 0.7;
+  }
+  .pill.pill-asleep .fx-canvas {
+    transition: none;
+  }
+}
+
 /* ---------- Overlay pill ---------- */
 
 body.overlay-body {

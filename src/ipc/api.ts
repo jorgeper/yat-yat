@@ -76,4 +76,8 @@ export const api = {
   getAppInfo: () => call<AppInfo>("get_app_info"),
   openSettings: (section?: string) => call<void>("open_settings", { section }),
   listUserThemes: () => call<UserTheme[]>("list_user_themes"),
+  wiggleTray: () => call<void>("wiggle_tray"),
+  getUninstallPlan: (keepData: boolean) =>
+    call<import("./types").UninstallPlanItem[]>("get_uninstall_plan", { keepData }),
+  uninstallApp: (keepData: boolean) => call<void>("uninstall_app", { keepData }),
 };

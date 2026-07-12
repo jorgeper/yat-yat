@@ -103,9 +103,9 @@ const sdSegment = (px, py, ax, ay, bx, by) => {
 // r25), U-arc (r47 about 120,106, stroke 11, lead-ins from y=96), stem
 // (120,153-170) and base (96-144,176), all tilted -6° like the app icon.
 // Sized to fill the 44 px tray box with ~0.5 px margin.
-function yatMicSdf(px, py) {
+function yatMicSdf(px, py, extraTiltDeg = 0) {
   const K = 0.2872; // source units -> screen px
-  const THETA = (6 * Math.PI) / 180;
+  const THETA = ((6 + extraTiltDeg) * Math.PI) / 180;
   const cos = Math.cos(THETA);
   const sin = Math.sin(THETA);
   // Screen -> source: un-rotate the -6° tilt about the box centre, then
@@ -151,3 +151,11 @@ trayIcon("tray-processing.png", (px, py) =>
     sdCircle(px, py, 33, 22, 3.4),
   ),
 );
+// Dance-egg wiggle frames (SPEC12 §2): the recording glyph with the mic
+// rocked around its base tilt; the dot stays put. Rust steps 1→4 then
+// restores the live state icon.
+[-8, 8, -4, 0].forEach((delta, i) => {
+  trayIcon(`tray-wiggle-${i + 1}.png`, (px, py) =>
+    union(yatMicSdf(px, py, delta), sdCircle(px, py, 36.5, 7.5, 5.5)),
+  );
+});

@@ -290,6 +290,35 @@ pub fn cancel_dictation(state: State<AppState>) {
     state.pipeline.cancel();
 }
 
+/// SPEC11 §1: the itemized uninstall plan the dialog shows before consent.
+#[tauri::command]
+pub fn get_uninstall_plan(
+    state: State<AppState>,
+    keep_data: bool,
+) -> Vec<crate::uninstall::PlanItem> {
+    let home = dirs::home_dir().unwrap_or_default();
+    crate::uninstall::uninstall_plan(&state.data_dir, &home, keep_data)
+}
+
+/// SPEC11 §2: best-effort uninstall, ending with the bundle in the Trash
+/// (macOS) or a hand-off to the NSIS uninstaller (Windows). Runs off the
+/// IPC thread; the app exits shortly after.
+#[tauri::command]
+pub fn uninstall_app(app: AppHandle, keep_data: bool) {
+    std::thread::spawn(move || crate::uninstall::execute(&app, keep_data));
+}
+
+/// SPEC12 §2: the dance-egg tray wiggle. Cosmetic only; the overlay already
+/// gates on the setting and reduced motion, but the eggs switch is
+/// re-checked here too (defense in depth).
+#[tauri::command]
+pub fn wiggle_tray(app: AppHandle, state: State<AppState>) {
+    if !state.settings.read().unwrap().easter_eggs {
+        return;
+    }
+    crate::tray::wiggle(&app);
+}
+
 /// SPEC7 FR-G3: the focus-guard prompt's buttons. "paste" delivers to the
 /// now-frontmost app; "copy" leaves the text on the clipboard.
 #[tauri::command]
@@ -329,5 +358,8 @@ pub fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool {
         open_menu_bar_settings,
         list_user_themes,
         resolve_focus_prompt,
+        get_uninstall_plan,
+        uninstall_app,
+        wiggle_tray,
     ]
 }

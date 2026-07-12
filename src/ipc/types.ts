@@ -30,6 +30,7 @@ export interface Settings {
   overlay_theme: string;
   focus_guard: boolean;
   sound_cues: boolean;
+  easter_eggs: boolean;
   dictionary: DictionaryEntry[];
   filler_words: string[];
   enhancement: EnhancementSettings;
@@ -81,6 +82,13 @@ export interface CaptureEvent {
   is_key_down: boolean;
 }
 
+// SPEC11 §1: one item the uninstall would remove.
+export interface UninstallPlanItem {
+  path: string;
+  kind: "app_data" | "models" | "preferences" | "webkit" | "caches" | "saved_state";
+  bytes: number;
+}
+
 export interface UserTheme {
   id: string;
   name: string;
@@ -121,7 +129,8 @@ export function defaultSettings(): Settings {
     overlay_effect: "classic-bars",
     overlay_theme: "indigo",
     focus_guard: true,
-    sound_cues: false,
+    sound_cues: true,
+    easter_eggs: true,
     dictionary: [],
     filler_words: [...DEFAULT_FILLERS],
     enhancement: { ...DEFAULT_ENHANCEMENT },

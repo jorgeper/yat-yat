@@ -3,10 +3,14 @@
 
 import { api } from "../ipc/api";
 import { getBuiltinTheme } from "./themes";
+import { secretThemeCss } from "./secretTheme";
 
 const STYLE_ID = "nh-theme-style";
 
 export async function resolveThemeCss(themeId: string): Promise<string> {
+  // The Konami-unlocked theme resolves before everything else (SPEC11 §5.2).
+  const secret = secretThemeCss(themeId);
+  if (secret) return secret;
   if (themeId.startsWith("user:")) {
     try {
       const user = (await api.listUserThemes()).find(

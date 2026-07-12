@@ -67,22 +67,23 @@ test("E14b: focus-guard and sound-cues toggles show their defaults and persist",
   await page.goto("/");
   await expect(page.getByTestId("settings-root")).toBeVisible();
 
-  // Documented defaults (SPEC7 FR-G6 / FR-C3): guard on, cues off.
+  // Documented defaults (SPEC7 FR-G6; cues ON since SPEC11 §4 — the
+  // sanctioned amendment): guard on, cues on.
   const guard = page.getByTestId("focus-guard");
   const cues = page.getByTestId("sound-cues");
   await expect(guard).toBeChecked();
-  await expect(cues).not.toBeChecked();
+  await expect(cues).toBeChecked();
 
   await guard.uncheck();
-  await cues.check();
+  await cues.uncheck();
   await expect(guard).not.toBeChecked();
-  await expect(cues).toBeChecked();
+  await expect(cues).not.toBeChecked();
 
   // Survives a reload (mock persists set_settings within the tab).
   await page.reload();
   await expect(page.getByTestId("settings-root")).toBeVisible();
   await expect(page.getByTestId("focus-guard")).not.toBeChecked();
-  await expect(page.getByTestId("sound-cues")).toBeChecked();
+  await expect(page.getByTestId("sound-cues")).not.toBeChecked();
 });
 
 test("E14c: dictionary rows add, persist across reload, and delete", async ({ page }) => {

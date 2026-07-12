@@ -82,8 +82,8 @@ smaller models like Whisper Tiny/Small and Parakeet stay comfortably fast.
 1. Press **Right ⌘** (configurable, bare modifier keys supported). A small pill
    appears with a live waveform — the app you're typing in keeps focus. While
    recording, the menu-bar mic carries a **red dot** so there's always an
-   ambient "mic is live" indicator, and an optional sound cue (Settings →
-   General, off by default) ticks on start and clicks when text is delivered.
+   ambient "mic is live" indicator, and a soft sound cue (Settings →
+   General, on by default) ticks on start and clicks when text is delivered.
 2. Talk. Press the hotkey again (or use hold-to-talk mode). `Esc` cancels.
 3. The transcript is cleaned — filler words (`um`, `uh`, …), bracketed noise
    tags, and stuttered repeats are stripped, and your personal dictionary is
@@ -349,6 +349,21 @@ adapted from [Handy](https://github.com/cjpais/Handy) (MIT),
 [handy-keys](https://github.com/handy-computer/handy-keys),
 [tauri-nspanel](https://github.com/ahkohd/tauri-nspanel), and
 [whisper.cpp](https://github.com/ggml-org/whisper.cpp).
+
+## Uninstalling
+
+**Settings → General → Uninstall Yat Yat…** removes everything the app
+stored — settings, history, downloaded models, permission grants,
+preferences, caches — shows you exactly what goes (with sizes) before you
+confirm, then moves the app itself to the Trash. A "keep my settings &
+history" option preserves your configuration for a future reinstall
+(models are removed either way — they're re-downloadable). Two things
+macOS offers no API to remove: the Menu Bar allowance toggle and a Dock
+pin, if you added one. On Windows, use Add/Remove Programs (or the same
+in-app button) — the uninstaller clears app data too. Developers wanting a
+scripted scrub: `npm run clean:app`.
+
+Yat Yat has secrets — spoilers in [docs/EASTER-EGGS.md](docs/EASTER-EGGS.md).
 
 ## License
 

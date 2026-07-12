@@ -1,11 +1,13 @@
 // Settings window (SPEC FR-6): General / Hotkey / Models / Cleanup, plus the
 // first-run onboarding wizard (FR-7) when onboarding is incomplete.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, listen } from "../ipc/api";
 import type { HistoryEntry, ModelStatus, Settings } from "../ipc/types";
 import type { StepId } from "../lib/onboarding";
 import { updates } from "../ipc/updates";
+import { konamiProgress, KONAMI } from "../lib/eggs";
+import { SECRET_THEME_ID } from "../overlay/secretTheme";
 import AppearanceSection from "./AppearanceSection";
 import GeneralSection from "./GeneralSection";
 import HotkeySection from "./HotkeySection";
@@ -36,6 +38,8 @@ export default function SettingsApp() {
   // SPEC9: Check for Updates… (native menu / tray) opens the dialog here.
   const [updateOpen, setUpdateOpen] = useState(false);
   const [appVersion, setAppVersion] = useState("");
+  // SPEC11 §5.2: ↑↑↓↓←→←→BA toggles the secret Yat95 theme.
+  const [eggToast, setEggToast] = useState<string | null>(null);
 
   const refreshModels = useCallback(() => {
     api.listModels().then(setModels).catch(console.error);
@@ -109,6 +113,38 @@ export default function SettingsApp() {
     }
   }, []);
 
+  // SPEC11 §5.2: the Konami code toggles the secret Yat95 theme. Cosmetic
+  // only — it just writes overlay_theme like the Appearance picker would.
+  const settingsEggRef = useRef<Settings | null>(null);
+  settingsEggRef.current = settings;
+  const prevThemeRef = useRef<string>("indigo");
+  useEffect(() => {
+    let progress = 0;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return; // never eat typing in settings fields
+      }
+      progress = konamiProgress(progress, e.key);
+      if (progress < KONAMI.length) return;
+      progress = 0;
+      const current = settingsEggRef.current;
+      // SPEC12 §3: the Easter-eggs switch silences the code entirely.
+      if (!current || !current.easter_eggs) return;
+      if (current.overlay_theme === SECRET_THEME_ID) {
+        void save({ ...current, overlay_theme: prevThemeRef.current });
+        setEggToast("Back to normal. The 90s say hi.");
+      } else {
+        prevThemeRef.current = current.overlay_theme;
+        void save({ ...current, overlay_theme: SECRET_THEME_ID });
+        setEggToast("🎉 Secret theme unlocked: Yat95");
+      }
+      window.setTimeout(() => setEggToast(null), 3000);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // SPEC4 FR-F1: the single recovery entry point. Clears the completion flag
   // (and the given deferrals, so a broken-but-deferred gate is re-checked);
   // SPEC2's gate resolution then opens the wizard at the first unmet gate.
@@ -158,6 +194,11 @@ export default function SettingsApp() {
           updates={updates}
           onClose={() => setUpdateOpen(false)}
         />
+      )}
+      {eggToast && (
+        <div className="egg-toast" data-testid="egg-toast">
+          {eggToast}
+        </div>
       )}
       <nav className="settings-nav">
         <div className="app-name">Yat Yat</div>

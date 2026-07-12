@@ -71,9 +71,13 @@ pub struct Settings {
     /// Ask before pasting when focus moved to a different app mid-dictation
     /// (SPEC7 FR-G6, default on).
     pub focus_guard: bool,
-    /// Audible tick/click on recording start and text delivery (SPEC7 FR-C3,
-    /// default off).
+    /// Audible tick/click on recording start and text delivery (SPEC7 FR-C3;
+    /// default ON since SPEC11 §4 — users who persisted false keep it).
     pub sound_cues: bool,
+    /// The Easter-eggs switch (SPEC12 §3): gates ALL eggs — the dance
+    /// wiggle (pill + tray), the Konami/Yat95 unlock, and the sleepy
+    /// waveform. Default ON; eggs stay cosmetic-only either way.
+    pub easter_eggs: bool,
     /// Personal dictionary: literal whole-word replacements applied to every
     /// transcript (SPEC7 FR-D).
     pub dictionary: Vec<DictionaryEntry>,
@@ -101,7 +105,8 @@ impl Default for Settings {
             overlay_effect: "classic-bars".into(),
             overlay_theme: "indigo".into(),
             focus_guard: true,
-            sound_cues: false,
+            sound_cues: true,
+            easter_eggs: true,
             dictionary: Vec::new(),
             filler_words: DEFAULT_FILLERS.iter().map(|s| s.to_string()).collect(),
             enhancement: EnhancementSettings::default(),
@@ -286,7 +291,8 @@ mod tests {
         .unwrap();
         let loaded = Settings::load(&path);
         assert!(loaded.focus_guard, "focus guard defaults ON");
-        assert!(!loaded.sound_cues, "sound cues default OFF");
+        // Sanctioned SPEC11 §4 amendment: cues default ON since SPEC11.
+        assert!(loaded.sound_cues, "sound cues default ON");
         assert!(loaded.dictionary.is_empty(), "dictionary defaults empty");
         assert_eq!(loaded.hotkey, "F19", "legacy fields still honored");
     }
@@ -304,6 +310,23 @@ mod tests {
         s.focus_guard = false;
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);
+    }
+
+    // R17 (SPEC12 §3): the Easter-eggs switch — default ON, legacy JSON
+    // without the field loads ON, a persisted OFF round-trips.
+    #[test]
+    fn r17_easter_eggs_defaults_on_and_roundtrips() {
+        assert!(Settings::default().easter_eggs, "eggs default ON");
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, r#"{"hotkey":"F19"}"#).unwrap();
+        assert!(Settings::load(&path).easter_eggs, "legacy JSON loads ON");
+
+        let mut s = Settings::default();
+        s.easter_eggs = false;
+        s.save(&path).unwrap();
+        assert_eq!(Settings::load(&path), s, "persisted OFF round-trips");
     }
 
     // R8: enhancement endpoint guard.

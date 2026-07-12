@@ -271,7 +271,22 @@ async function invoke(command: string, args?: Record<string, unknown>): Promise<
     case "toggle_dictation":
     case "cancel_dictation":
     case "resolve_focus_prompt":
+    case "uninstall_app":
+    case "wiggle_tray":
       return;
+    case "get_uninstall_plan": {
+      // Mirrors the Rust plan shape (SPEC11 §1) for E16.
+      const keep = args?.keepData === true;
+      const items = [
+        { path: "/mock/Application Support/com.yatyat.app/models", kind: "models", bytes: 2040109466 },
+        ...(keep
+          ? []
+          : [{ path: "/mock/Application Support/com.yatyat.app", kind: "app_data", bytes: 153600 }]),
+        { path: "/mock/Preferences/com.yatyat.app.plist", kind: "preferences", bytes: 4096 },
+        { path: "/mock/Caches/com.yatyat.app", kind: "caches", bytes: 1048576 },
+      ];
+      return items;
+    }
     case "test_enhancement": {
       const sample = (args?.sample as string) || "";
       if (!state.settings.enhancement.endpoint.match(/^https?:\/\/(localhost|127\.0\.0\.1)/)) {

@@ -75,7 +75,86 @@ impl LoadedModel {
                 .map_err(|e| anyhow::anyhow!("parakeet inference: {e}"))?
                 .text,
         };
-        Ok(text.trim().to_string())
+        // Engine artifact, filtered at the engine boundary so EVERY consumer
+        // (live passes, the stop path, Retry, the CLI) is protected.
+        Ok(strip_prompt_echo(text.trim()))
+    }
+}
+
+/// During silence, Whisper hallucinates its own initial prompt back —
+/// usually mutated ("This is the clear, well-pu-ctuated transcription of
+/// the speaker's words."). Sentence-level filter (R16): a sentence is an
+/// echo when it shares a run of 4+ consecutive normalized words with the
+/// prompt. Real dictation virtually never reproduces a 4-word run of
+/// prompt-engineering prose; mutated echoes always keep one intact.
+pub fn strip_prompt_echo(text: &str) -> String {
+    fn words(s: &str) -> Vec<String> {
+        s.split(|c: char| !c.is_alphanumeric() && c != '\'')
+            .filter(|w| !w.is_empty())
+            .map(|w| w.to_lowercase())
+            .collect()
+    }
+
+    let prompt_words = words(WHISPER_INITIAL_PROMPT);
+    let is_echo = |sentence: &str| -> bool {
+        let sw = words(sentence);
+        if sw.len() < 4 {
+            return false;
+        }
+        sw.windows(4)
+            .any(|run| prompt_words.windows(4).any(|p| p == run))
+    };
+
+    // Split into sentences, keeping each terminator with its sentence.
+    let mut out = String::new();
+    let mut sentence = String::new();
+    for c in text.chars() {
+        sentence.push(c);
+        if matches!(c, '.' | '!' | '?') {
+            if !is_echo(&sentence) {
+                out.push_str(&sentence);
+            }
+            sentence.clear();
+        }
+    }
+    if !sentence.trim().is_empty() && !is_echo(&sentence) {
+        out.push_str(&sentence);
+    }
+    out.trim().to_string()
+}
+
+#[cfg(test)]
+mod echo_tests {
+    use super::*;
+
+    // R16: the prompt-echo filter (silence hallucination guard).
+    #[test]
+    fn r16_drops_verbatim_and_mutated_prompt_echoes() {
+        assert_eq!(strip_prompt_echo(WHISPER_INITIAL_PROMPT), "");
+        // The mutation observed in the field: doubled word + mangled token.
+        assert_eq!(
+            strip_prompt_echo(
+                "This is the clear, clear, well-pu-ctuated transcription of the speaker's words."
+            ),
+            ""
+        );
+    }
+
+    #[test]
+    fn r16_keeps_real_speech_and_mixed_output() {
+        let real = "Ship the release notes on Wednesday.";
+        assert_eq!(strip_prompt_echo(real), real);
+        // Echo sentence next to real speech: the speech survives.
+        let mixed = format!("{WHISPER_INITIAL_PROMPT} Call the dentist tomorrow.");
+        assert_eq!(strip_prompt_echo(&mixed), "Call the dentist tomorrow.");
+    }
+
+    #[test]
+    fn r16_short_or_coincidental_overlap_is_not_an_echo() {
+        // Shares words but never a 4-word run of the prompt.
+        let s = "The transcription is clear and the words are the speaker's own.";
+        assert_eq!(strip_prompt_echo(s), s);
+        assert_eq!(strip_prompt_echo(""), "");
     }
 }
 
