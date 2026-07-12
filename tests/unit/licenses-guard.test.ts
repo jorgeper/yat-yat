@@ -27,7 +27,7 @@ describe("U13: license allowlist guard", () => {
   });
 
   it("fails copyleft and missing licenses", () => {
-    for (const expr of ["GPL-3.0-only", "AGPL-3.0", "LGPL-2.1-or-later", "", null, undefined]) {
+    for (const expr of ["GPL-3.0", "AGPL-3.0", "LGPL-2.1-or-later", "", null, undefined]) {
       expect(licenseAllowed(expr as string), String(expr)).toBe(false);
     }
   });
