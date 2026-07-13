@@ -1,6 +1,6 @@
 [package]
 name = "yat-yat"
-version = "0.1.0-alpha.7"
+version = "0.1.0-alpha.8"
 description = "Yat Yat — fast, fully-local voice dictation"
 authors = ["jorgeper"]
 license = "MIT"
