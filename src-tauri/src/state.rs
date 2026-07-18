@@ -33,8 +33,9 @@ pub struct AppState {
     pub hotkeys: Mutex<Option<HotkeyService>>,
     /// The warm STT engine for the active model (SPEC §3: loaded once).
     engine: Mutex<Option<LoadedModel>>,
-    /// Per-model real-time-factor EMAs (SPEC13 FR-P2). In-memory only —
-    /// first run of a model estimates from the seed.
+    /// Per-model real-time-factor EMAs (SPEC13 FR-P2, since made
+    /// disk-backed — see the ARCHITECTURE.md divergence note). Loaded from
+    /// rtf.json at startup; a model never measured estimates from the seed.
     rtf: Mutex<HashMap<String, crate::progress::Rtf>>,
 }
 
@@ -47,6 +48,7 @@ impl AppState {
         recorder: AudioRecorder,
         pipeline: Pipeline,
     ) -> Self {
+        let rtf = crate::progress::load_rtf_map(&data_dir.join("rtf.json"));
         Self {
             data_dir,
             settings: RwLock::new(settings),
@@ -61,7 +63,7 @@ impl AppState {
             downloads: DownloadManager::default(),
             hotkeys: Mutex::new(None),
             engine: Mutex::new(None),
-            rtf: Mutex::new(HashMap::new()),
+            rtf: Mutex::new(rtf),
         }
     }
 
@@ -73,11 +75,13 @@ impl AppState {
         audio_secs * rtf.estimate()
     }
 
-    /// Fold one measured raw-STT wall time into the active model's EMA
-    /// (SPEC13 FR-P5 — callers must exclude cleanup/enhancement time).
-    pub fn observe_rtf(&self, audio_secs: f32, wall_secs: f32) {
-        let model = self.settings.read().unwrap().active_model.clone().unwrap_or_default();
-        self.rtf.lock().unwrap().entry(model).or_default().observe(audio_secs, wall_secs);
+    /// Fold one measured raw-STT wall time into a model's EMA (SPEC13
+    /// FR-P5 — raw engine time only) and persist the map so relaunches
+    /// start calibrated.
+    fn observe_rtf(&self, model: &str, audio_secs: f32, wall_secs: f32) {
+        let mut rtf = self.rtf.lock().unwrap();
+        rtf.entry(model.to_string()).or_default().observe(audio_secs, wall_secs);
+        crate::progress::save_rtf_map(&self.data_dir.join("rtf.json"), &rtf);
     }
 
     pub fn settings_path(&self) -> PathBuf {
@@ -133,7 +137,21 @@ impl AppState {
                 }
             }
         }
-        engine.as_mut().unwrap().transcribe(samples)
+        // Time ONLY the engine call (model load above is excluded) and feed
+        // the per-model RTF estimate. Live passes run through here too, so
+        // with live transcription on, the progress estimate is calibrated
+        // from the current session before the final transcription starts.
+        let t0 = std::time::Instant::now();
+        let result = engine.as_mut().unwrap().transcribe(samples);
+        drop(engine);
+        if result.is_ok() {
+            self.observe_rtf(
+                &active_id,
+                samples.len() as f32 / 16_000.0,
+                t0.elapsed().as_secs_f32(),
+            );
+        }
+        result
     }
 
     /// Unload the engine (model switched or deleted).

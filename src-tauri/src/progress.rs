@@ -34,14 +34,20 @@ pub fn fraction(elapsed_secs: f32, expected_secs: f32) -> f32 {
 
 /// Exponential moving average of the measured real-time factor
 /// (wall-clock STT seconds ÷ audio seconds) for one model.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Rtf {
     value: f32,
+    /// False until the first real measurement. The seed is a guess, not
+    /// data — the first observation replaces it outright instead of
+    /// blending (a 0.5 seed on a 0.01-RTF machine took ~9 dictations to
+    /// converge, which read as "crawls to 10% then snaps").
+    #[serde(default)]
+    observed: bool,
 }
 
 impl Default for Rtf {
     fn default() -> Self {
-        Self { value: DEFAULT_RTF }
+        Self { value: DEFAULT_RTF, observed: false }
     }
 }
 
@@ -57,8 +63,29 @@ impl Rtf {
         {
             return;
         }
-        let observed = wall_secs / audio_secs;
-        self.value += ALPHA * (observed - self.value);
+        let measured = wall_secs / audio_secs;
+        if self.observed {
+            self.value += ALPHA * (measured - self.value);
+        } else {
+            self.value = measured;
+            self.observed = true;
+        }
+    }
+}
+
+/// Load the per-model RTF map from disk. Missing or corrupt files read as
+/// empty (models fall back to the seed).
+pub fn load_rtf_map(path: &std::path::Path) -> std::collections::HashMap<String, Rtf> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Best-effort persistence — an unwritable disk must never break dictation.
+pub fn save_rtf_map(path: &std::path::Path, map: &std::collections::HashMap<String, Rtf>) {
+    if let Ok(json) = serde_json::to_string_pretty(map) {
+        let _ = std::fs::write(path, json);
     }
 }
 
@@ -117,19 +144,26 @@ mod tests {
     }
 
     #[test]
-    fn r18_rtf_moves_toward_observation_by_alpha() {
+    fn r18_rtf_first_observation_replaces_seed_then_ema() {
+        // The seed is a guess, not data — the first real measurement must
+        // replace it outright (a 0.5 seed on a 0.01-RTF machine took ~9
+        // dictations to converge and made the fill crawl then snap).
         let mut rtf = Rtf::default();
         // 10 s of audio transcribed in 2 s wall → observed RTF 0.2.
         rtf.observe(10.0, 2.0);
-        let want = DEFAULT_RTF + ALPHA * (0.2 - DEFAULT_RTF);
+        assert!(
+            (rtf.estimate() - 0.2).abs() < 1e-6,
+            "first observation replaces the seed: got {}",
+            rtf.estimate()
+        );
+        // Later observations blend by ALPHA.
+        rtf.observe(10.0, 4.0); // observed 0.4
+        let want = 0.2 + ALPHA * (0.4 - 0.2);
         assert!(
             (rtf.estimate() - want).abs() < 1e-6,
             "EMA step: got {}, want {want}",
             rtf.estimate()
         );
-        // A second identical observation moves it closer still.
-        rtf.observe(10.0, 2.0);
-        assert!(rtf.estimate() < want && rtf.estimate() > 0.2);
     }
 
     #[test]
@@ -142,5 +176,44 @@ mod tests {
         rtf.observe(f32::NAN, 1.0);
         rtf.observe(10.0, f32::INFINITY);
         assert_eq!(rtf.estimate(), DEFAULT_RTF, "junk must not move the EMA");
+        // Junk must not count as "observed": the next real measurement
+        // still replaces the seed.
+        rtf.observe(10.0, 2.0);
+        assert!((rtf.estimate() - 0.2).abs() < 1e-6);
+    }
+
+    // R21: per-model RTFs survive relaunch via <data dir>/rtf.json.
+    #[test]
+    fn r21_rtf_map_roundtrips_through_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rtf.json");
+        let mut map = std::collections::HashMap::new();
+        let mut fast = Rtf::default();
+        fast.observe(10.0, 0.2); // 0.02
+        map.insert("parakeet".to_string(), fast);
+        map.insert("untouched".to_string(), Rtf::default());
+        save_rtf_map(&path, &map);
+
+        let loaded = load_rtf_map(&path);
+        assert!((loaded["parakeet"].estimate() - 0.02).abs() < 1e-6);
+        // Observed state survives too: the next observation blends
+        // instead of replacing.
+        let mut back = loaded["parakeet"];
+        back.observe(10.0, 0.4); // observed 0.04
+        let want = 0.02 + ALPHA * (0.04 - 0.02);
+        assert!((back.estimate() - want).abs() < 1e-6);
+        // An unobserved entry stays seed-replaceable after the round-trip.
+        let mut seed = loaded["untouched"];
+        seed.observe(10.0, 2.0);
+        assert!((seed.estimate() - 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn r21_rtf_map_missing_or_corrupt_yields_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(load_rtf_map(&dir.path().join("nope.json")).is_empty());
+        let bad = dir.path().join("rtf.json");
+        std::fs::write(&bad, "{ not json").unwrap();
+        assert!(load_rtf_map(&bad).is_empty());
     }
 }

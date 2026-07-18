@@ -12,7 +12,7 @@ const env = { ...process.env, PATH: `${homedir()}/.cargo/bin:${process.env.PATH}
 
 const steps = [
   {
-    name: "Rust unit tests (R1–R20)",
+    name: "Rust unit tests (R1–R21)",
     cmd: "cargo test --release",
     cwd: join(root, "src-tauri"),
   },

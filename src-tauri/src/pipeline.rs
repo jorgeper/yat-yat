@@ -482,11 +482,9 @@ fn resolve_focus(app: &AppHandle, action: FocusAction) {
 /// STT + deterministic cleanup + optional enhancement (SPEC §4).
 fn transcribe_and_clean(app: &AppHandle, samples: &[f32]) -> anyhow::Result<String> {
     let state = app.state::<AppState>();
-    let stt_started = Instant::now();
+    // RTF observation happens inside state.transcribe (raw engine time
+    // only) — cleanup and enhancement below never pollute the estimate.
     let raw = state.transcribe(app, samples)?;
-    // SPEC13 FR-P5: raw STT wall time only — cleanup and enhancement below
-    // must not pollute the real-time-factor EMA.
-    state.observe_rtf(samples.len() as f32 / 16_000.0, stt_started.elapsed().as_secs_f32());
     let (clean_opts, enhancement) = {
         let settings = state.settings.read().unwrap();
         (settings.clean_options(), settings.enhancement.clone())

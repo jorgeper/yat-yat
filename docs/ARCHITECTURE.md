@@ -251,9 +251,16 @@ The transcribing overlay shows an **estimated** progress fill — transcribe-rs
 exposes no progress callback for either engine (revisit if the crate ever
 grows one), so `src-tauri/src/progress.rs` (pure, R18-tested) estimates:
 expected STT time = audio seconds × a per-model real-time factor kept as an
-in-memory EMA (`AppState::rtf`, seed 0.5 — deliberately slow-side so a wrong
-guess finishes early rather than parking at the cap; alpha 0.3, observed
-from raw STT wall time only, never cleanup/enhancement). While the blocking
+EMA (`AppState::rtf`, seed 0.5, alpha 0.3, observed from raw engine wall
+time only — never model load, cleanup, or enhancement). Three divergences
+from SPEC13 §1 (field-measured: the 0.5 seed is ~50× slow for Apple-Silicon
+Metal, so the fill crawled to ~10% and snapped): the first real measurement
+**replaces** the seed instead of blending (R18); the map is **disk-backed**
+(`<data dir>/rtf.json`, R21 — corrupt/missing reads as empty) so relaunches
+start calibrated; and the observation lives inside `AppState::transcribe`,
+so **live-transcription passes calibrate the estimate mid-recording** —
+even a first-ever dictation gets an accurate fill when live mode is on.
+While the blocking
 STT call runs, `finish_recording` spawns a ticker thread emitting
 `transcribe-progress` (bare fraction, like `mic-level`) every 100 ms; its
 stop flag is cleared on every exit path before the overlay changes state,
