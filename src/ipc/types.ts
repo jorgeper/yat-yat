@@ -82,6 +82,12 @@ export interface CaptureEvent {
   is_key_down: boolean;
 }
 
+// SPEC13 FR-M: estimated transcription progress. Emitted by the pipeline's
+// ticker thread to the overlay window while STT runs; payload is a bare
+// fraction 0..1 (same shape discipline as "mic-level").
+export const TRANSCRIBE_PROGRESS_EVENT = "transcribe-progress";
+export type TranscribeProgress = number;
+
 // SPEC11 §1: one item the uninstall would remove.
 export interface UninstallPlanItem {
   path: string;

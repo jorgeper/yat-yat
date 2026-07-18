@@ -12,6 +12,7 @@ pub mod live;
 pub mod overlay;
 pub mod paste;
 pub mod pipeline;
+pub mod progress;
 pub mod registry;
 pub mod settings;
 pub mod sounds;
@@ -41,6 +42,29 @@ pub fn show_settings_window(app: &AppHandle, section: Option<&str>) {
     }
 }
 
+/// What Ready-time activation does, decided by the launch shape (pure —
+/// R19). The dock-tile nudge's activate-and-hand-back is ONLY for the
+/// windowless tray-only launch; on first run the wizard window is visible
+/// and must KEEP focus — handing it back deactivates the app under the
+/// user's cursor and their next click merely re-activates the window
+/// (WKWebView refuses first-mouse), reading as a dead button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadyActivation {
+    /// Windowless launch: activate to clear macOS 26's hidden flag, then
+    /// hand focus straight back.
+    NudgeAndHandBack,
+    /// A visible settings window (first-run wizard): activate and stay.
+    ActivateKeepFocus,
+}
+
+pub fn ready_activation(settings_window_visible: bool) -> ReadyActivation {
+    if settings_window_visible {
+        ReadyActivation::ActivateKeepFocus
+    } else {
+        ReadyActivation::NudgeAndHandBack
+    }
+}
+
 /// macOS 26 leaves a never-activated app whose windows are all hidden (our
 /// exact startup shape: invisible settings window, hidden overlay, tray
 /// only) in the application-hidden state — and Tahoe's Dock shows no tile
@@ -54,7 +78,7 @@ pub fn show_settings_window(app: &AppHandle, section: Option<&str>) {
 /// the flag is real activation — so activate at Ready and hand focus
 /// straight back. Cost: a sub-second focus blip, once, at app launch.
 #[cfg(target_os = "macos")]
-fn dock_tile_nudge(app: &AppHandle) {
+fn dock_tile_nudge(app: &AppHandle, hand_back: bool) {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
 
@@ -75,6 +99,11 @@ fn dock_tile_nudge(app: &AppHandle) {
                 let _: () = msg_send![a, activateIgnoringOtherApps: true];
             }
         });
+        // First run (visible wizard): the activation IS the point — the
+        // window keeps focus so the first click presses, not activates.
+        if !hand_back {
+            return;
+        }
         // Hand focus back the moment the activation is actually observed
         // (deactivating before it lands is a no-op — measured).
         for _ in 0..20 {
@@ -360,7 +389,13 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 if let tauri::RunEvent::Ready = &_event {
-                    dock_tile_nudge(_app);
+                    let wizard_visible = _app
+                        .get_webview_window(SETTINGS_LABEL)
+                        .map(|w| w.is_visible().unwrap_or(false))
+                        .unwrap_or(false);
+                    let hand_back =
+                        ready_activation(wizard_visible) == ReadyActivation::NudgeAndHandBack;
+                    dock_tile_nudge(_app, hand_back);
                 }
                 // Clicking the app's Dock icon (pinned, or during launch)
                 // while it is already running fires Reopen — open Settings.
@@ -369,4 +404,20 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod ready_activation_tests {
+    use super::*;
+
+    // R19: the Ready-time activation decision (first-run focus bug).
+    #[test]
+    fn r19_windowless_launch_nudges_and_hands_back() {
+        assert_eq!(ready_activation(false), ReadyActivation::NudgeAndHandBack);
+    }
+
+    #[test]
+    fn r19_visible_wizard_keeps_focus() {
+        assert_eq!(ready_activation(true), ReadyActivation::ActivateKeepFocus);
+    }
 }

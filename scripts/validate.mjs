@@ -12,12 +12,12 @@ const env = { ...process.env, PATH: `${homedir()}/.cargo/bin:${process.env.PATH}
 
 const steps = [
   {
-    name: "Rust unit tests (R1–R17)",
+    name: "Rust unit tests (R1–R20)",
     cmd: "cargo test --release",
     cwd: join(root, "src-tauri"),
   },
   {
-    name: "Frontend unit tests (U1–U18)",
+    name: "Frontend unit tests (U1–U19)",
     cmd: "npx vitest run --reporter=verbose",
     cwd: root,
   },
@@ -27,7 +27,7 @@ const steps = [
     cwd: root,
   },
   {
-    name: "E2E tests (E1–E18b, Playwright over the mocked-IPC shim)",
+    name: "E2E tests (E1–E19b, Playwright over the mocked-IPC shim)",
     cmd: "npx playwright test --reporter=list",
     cwd: root,
   },

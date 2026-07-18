@@ -257,6 +257,15 @@ pub fn emit_level(app: &AppHandle, level: f32) {
     let _ = app.emit_to(OVERLAY_LABEL, "mic-level", level);
 }
 
+/// Push estimated transcription progress (0..1) to the overlay (SPEC13
+/// FR-P3). Bare fraction, same shape discipline as "mic-level".
+pub fn emit_progress(app: &AppHandle, fraction: f32) {
+    if !OVERLAY_VISIBLE.load(Ordering::SeqCst) {
+        return;
+    }
+    let _ = app.emit_to(OVERLAY_LABEL, "transcribe-progress", fraction);
+}
+
 /// Push a live-transcription pass result to the overlay (SPEC3 FR-L2).
 pub fn emit_stream_text(app: &AppHandle, text: &str) {
     if !OVERLAY_VISIBLE.load(Ordering::SeqCst) {

@@ -957,6 +957,14 @@ body.overlay-body {
 .wave.thinking i {
   animation: think 1.1s ease-in-out infinite;
   height: 6px;
+  opacity: 0.35;
+}
+
+/* SPEC13 FR-O: estimated progress sweeps left-to-right across the shimmer.
+   A class/opacity change, not an animation — it survives reduced motion. */
+.wave.thinking i.fill {
+  opacity: 1;
+  background: var(--nh-fx-accent, var(--nh-fx-primary, #8a93ff));
 }
 
 .wave.thinking i:nth-child(3n) {

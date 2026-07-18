@@ -9,6 +9,7 @@ import { danceMatches, SleepTracker, SLEEP_LEVEL } from "../lib/eggs";
 import { EMPTY_LIVE, stabilize, type LiveText } from "../lib/liveText";
 import { BAR_COUNT } from "../lib/waveform";
 import { applyTheme } from "./applyTheme";
+import { advance, filledBars } from "./progress";
 import { EffectEngine } from "./effects/engine";
 import { DEFAULT_EFFECT, getEffect } from "./effects";
 import FocusPrompt from "./FocusPrompt";
@@ -39,6 +40,11 @@ export default function OverlayApp() {
       window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
   const [liveText, setLiveText] = useState<LiveText>(EMPTY_LIVE);
+  // Estimated transcription progress (SPEC13 FR-O2): forward-only within
+  // one transcribing session, reset on each new one, ignored elsewhere.
+  const [progress, setProgress] = useState(0);
+  const progressRef = useRef(0);
+  const stateRef = useRef<OverlayState>("hidden");
   const [elapsed, setElapsed] = useState(0);
   const [overflowing, setOverflowing] = useState(false);
   const startedRef = useRef<number>(0);
@@ -92,13 +98,26 @@ export default function OverlayApp() {
             if (state === "focus-changed") {
               setFocusApps({ from: from_app ?? "", to: to_app ?? "" });
             }
+            if (state === "transcribing") {
+              progressRef.current = 0;
+              setProgress(0);
+            }
             if (effect) setEffect(effect);
             if (theme !== undefined) applyTheme(theme);
             setLive(state === "recording" && live === true);
+            stateRef.current = state as OverlayState;
             setState(state as OverlayState);
           },
         ),
-        await listen("hide-overlay", () => setState("hidden")),
+        await listen("hide-overlay", () => {
+          stateRef.current = "hidden";
+          setState("hidden");
+        }),
+        await listen<number>("transcribe-progress", (fraction) => {
+          if (stateRef.current !== "transcribing") return;
+          progressRef.current = advance(progressRef.current, fraction);
+          setProgress(progressRef.current);
+        }),
         await listen<number>("mic-level", (level) => {
           engineRef.current?.feed(level);
           // Sleepy-waveform egg: any loud sample wakes instantly.
@@ -196,6 +215,7 @@ export default function OverlayApp() {
       } ${asleep ? "pill-asleep" : ""}`}
       data-testid="overlay-pill"
       data-state={state}
+      data-progress={state === "transcribing" ? Math.round(progress * 100) : undefined}
       data-live={live ? "true" : "false"}
       data-effect={getEffect(effect).id}
       onAnimationEnd={(e) => {
@@ -250,7 +270,7 @@ export default function OverlayApp() {
       {state === "transcribing" && (
         <div className="wave thinking" data-testid="thinking-wave">
           {Array.from({ length: BAR_COUNT }, (_, i) => (
-            <i key={i} />
+            <i key={i} className={i < filledBars(progress, BAR_COUNT) ? "fill" : ""} />
           ))}
         </div>
       )}

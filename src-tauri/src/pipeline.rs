@@ -355,11 +355,38 @@ fn finish_recording(app: &AppHandle, generation: u64, tx: &mpsc::Sender<Msg>) ->
         }
     }
 
-    match transcribe_and_clean(app, &samples) {
+    // SPEC13 FR-P3/FR-P4: estimated progress ticks while the blocking STT
+    // call runs. The ticker thread only reads the stop flag — the pipeline
+    // thread never blocks on it — and the flag is cleared on EVERY exit
+    // below before the overlay changes state or hides.
+    let audio_secs = samples.len() as f32 / 16_000.0;
+    let expected = state.expected_stt_secs(audio_secs);
+    let ticking = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    {
+        let ticking = std::sync::Arc::clone(&ticking);
+        let app = app.clone();
+        std::thread::spawn(move || {
+            let started = Instant::now();
+            while ticking.load(std::sync::atomic::Ordering::Relaxed) {
+                overlay::emit_progress(
+                    &app,
+                    crate::progress::fraction(started.elapsed().as_secs_f32(), expected),
+                );
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        });
+    }
+    let result = transcribe_and_clean(app, &samples);
+    ticking.store(false, std::sync::atomic::Ordering::Relaxed);
+
+    match result {
         Ok(text) if text.is_empty() => {
             overlay::show_state(app, overlay::state::NOTHING_HEARD);
         }
         Ok(text) => {
+            // Completion alone shows full (SPEC13 FR-P4) — before any
+            // delivery/focus-guard decision.
+            overlay::emit_progress(app, 1.0);
             // SPEC7 FR-G4: the transcript reaches history and
             // last-transcription BEFORE any delivery decision — no guard
             // outcome can lose text.
@@ -455,7 +482,11 @@ fn resolve_focus(app: &AppHandle, action: FocusAction) {
 /// STT + deterministic cleanup + optional enhancement (SPEC §4).
 fn transcribe_and_clean(app: &AppHandle, samples: &[f32]) -> anyhow::Result<String> {
     let state = app.state::<AppState>();
+    let stt_started = Instant::now();
     let raw = state.transcribe(app, samples)?;
+    // SPEC13 FR-P5: raw STT wall time only — cleanup and enhancement below
+    // must not pollute the real-time-factor EMA.
+    state.observe_rtf(samples.len() as f32 / 16_000.0, stt_started.elapsed().as_secs_f32());
     let (clean_opts, enhancement) = {
         let settings = state.settings.read().unwrap();
         (settings.clean_options(), settings.enhancement.clone())

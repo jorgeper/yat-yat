@@ -1,0 +1,146 @@
+// SPEC13 FR-P1: pure progress estimation for the transcribing overlay.
+// No Tauri types here (house pattern: cleanup.rs) — the pipeline owns the
+// ticker thread and event emission; this module owns the math.
+//
+// The fill is an ESTIMATE (transcribe-rs exposes no progress callback):
+// expected transcription time = audio seconds × a per-model real-time
+// factor learned as an EMA. The curve eases toward CAP and only real
+// completion shows full — the estimate never masquerades as a measurement.
+
+/// Seed real-time factor before any observation. Deliberately slow-side:
+/// an over-estimate makes the bar finish early (pleasant), an
+/// under-estimate parks it at the cap (annoying).
+pub const DEFAULT_RTF: f32 = 0.5;
+
+/// EMA smoothing for observed real-time factors.
+pub const ALPHA: f32 = 0.3;
+
+/// The estimate never shows more than this — completion alone shows full.
+const CAP: f32 = 0.95;
+
+/// `expected` below this is clamped up so `fraction` is total.
+const MIN_EXPECTED_SECS: f32 = 0.1;
+
+/// Estimated progress in [0, CAP]: 0 at 0, ≈0.9 when `elapsed == expected`,
+/// approaching CAP as elapsed grows.
+pub fn fraction(elapsed_secs: f32, expected_secs: f32) -> f32 {
+    let elapsed = elapsed_secs.max(0.0);
+    let expected = expected_secs.max(MIN_EXPECTED_SECS);
+    // CAP·(1 − e^(−k·t/T)) with k = ln 19 lands exactly on 0.9 at t == T
+    // and approaches CAP asymptotically.
+    const K: f32 = 2.944_438_9; // ln 19
+    CAP * (1.0 - (-K * elapsed / expected).exp())
+}
+
+/// Exponential moving average of the measured real-time factor
+/// (wall-clock STT seconds ÷ audio seconds) for one model.
+#[derive(Debug, Clone, Copy)]
+pub struct Rtf {
+    value: f32,
+}
+
+impl Default for Rtf {
+    fn default() -> Self {
+        Self { value: DEFAULT_RTF }
+    }
+}
+
+impl Rtf {
+    pub fn estimate(&self) -> f32 {
+        self.value
+    }
+
+    /// Fold one measured transcription into the EMA. Non-finite or
+    /// non-positive inputs are ignored.
+    pub fn observe(&mut self, audio_secs: f32, wall_secs: f32) {
+        if !(audio_secs > 0.0 && audio_secs.is_finite() && wall_secs > 0.0 && wall_secs.is_finite())
+        {
+            return;
+        }
+        let observed = wall_secs / audio_secs;
+        self.value += ALPHA * (observed - self.value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // R18: the estimator's properties (SPEC13 §4) — the exact curve is
+    // unspecified; these assertions are the contract.
+
+    #[test]
+    fn r18_fraction_zero_at_start() {
+        assert_eq!(fraction(0.0, 10.0), 0.0);
+        assert_eq!(fraction(0.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn r18_fraction_strictly_increasing() {
+        let expected = 8.0;
+        let mut prev = -1.0f32;
+        for i in 0..=200 {
+            let elapsed = i as f32 * 0.08; // 0..=2×expected
+            let f = fraction(elapsed, expected);
+            assert!(
+                f > prev,
+                "fraction must strictly increase: f({elapsed}) = {f} !> {prev}"
+            );
+            prev = f;
+        }
+    }
+
+    #[test]
+    fn r18_fraction_near_09_at_expected() {
+        for expected in [0.5f32, 3.0, 30.0, 300.0] {
+            let f = fraction(expected, expected);
+            assert!(
+                (f - 0.9).abs() < 0.05,
+                "fraction(expected, expected) should be ≈0.9, got {f}"
+            );
+        }
+    }
+
+    #[test]
+    fn r18_fraction_capped_below_completion() {
+        for (elapsed, expected) in [(100.0f32, 1.0f32), (1000.0, 10.0), (5.0, 0.0), (1.0, -3.0)] {
+            let f = fraction(elapsed, expected);
+            assert!(f <= 0.95, "fraction({elapsed}, {expected}) = {f} exceeds cap");
+            assert!(f >= 0.0, "fraction({elapsed}, {expected}) = {f} negative");
+            assert!(f.is_finite(), "fraction({elapsed}, {expected}) not finite");
+        }
+    }
+
+    #[test]
+    fn r18_rtf_seed_before_observation() {
+        assert_eq!(Rtf::default().estimate(), DEFAULT_RTF);
+    }
+
+    #[test]
+    fn r18_rtf_moves_toward_observation_by_alpha() {
+        let mut rtf = Rtf::default();
+        // 10 s of audio transcribed in 2 s wall → observed RTF 0.2.
+        rtf.observe(10.0, 2.0);
+        let want = DEFAULT_RTF + ALPHA * (0.2 - DEFAULT_RTF);
+        assert!(
+            (rtf.estimate() - want).abs() < 1e-6,
+            "EMA step: got {}, want {want}",
+            rtf.estimate()
+        );
+        // A second identical observation moves it closer still.
+        rtf.observe(10.0, 2.0);
+        assert!(rtf.estimate() < want && rtf.estimate() > 0.2);
+    }
+
+    #[test]
+    fn r18_rtf_ignores_junk_observations() {
+        let mut rtf = Rtf::default();
+        rtf.observe(0.0, 1.0);
+        rtf.observe(-5.0, 1.0);
+        rtf.observe(10.0, 0.0);
+        rtf.observe(10.0, -1.0);
+        rtf.observe(f32::NAN, 1.0);
+        rtf.observe(10.0, f32::INFINITY);
+        assert_eq!(rtf.estimate(), DEFAULT_RTF, "junk must not move the EMA");
+    }
+}

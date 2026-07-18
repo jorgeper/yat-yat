@@ -245,6 +245,25 @@ A single `easter_eggs` setting (default ON, R17) gates all three eggs; the
 overlay re-reads it at each recording start, and the command re-checks it
 server-side.
 
+## Transcription progress (SPEC13)
+
+The transcribing overlay shows an **estimated** progress fill — transcribe-rs
+exposes no progress callback for either engine (revisit if the crate ever
+grows one), so `src-tauri/src/progress.rs` (pure, R18-tested) estimates:
+expected STT time = audio seconds × a per-model real-time factor kept as an
+in-memory EMA (`AppState::rtf`, seed 0.5 — deliberately slow-side so a wrong
+guess finishes early rather than parking at the cap; alpha 0.3, observed
+from raw STT wall time only, never cleanup/enhancement). While the blocking
+STT call runs, `finish_recording` spawns a ticker thread emitting
+`transcribe-progress` (bare fraction, like `mic-level`) every 100 ms; its
+stop flag is cleared on every exit path before the overlay changes state,
+and only completion emits 1.0 — the curve itself tops out at 0.95. The
+overlay sweeps a `fill` class across the existing thinking-shimmer bars
+(forward-only via `src/overlay/progress.ts`, U19; session-scoped; theme
+variables only; a class change, not an animation, so it survives
+reduced motion). With enhancement enabled the bar crawls near the cap
+during the LLM round-trip — expected, not a bug.
+
 ## Design notes
 
 - **One pipeline thread** serializes Idle→Recording→Processing, so double
@@ -252,9 +271,19 @@ server-side.
 - **The overlay never takes focus**: NSPanel with `nonactivating_panel` +
   `can_become_key_window: false`; levels are throttled and skipped entirely
   while hidden (hidden WebKit views still pay for every event).
-- **Paste runs on the main thread** (macOS requirement), with the previous
-  clipboard restored ~300 ms after ⌘V; missing Accessibility degrades to
-  clipboard-only plus a notification.
+- **Paste runs on the main thread** (macOS requirement), but the previous-
+  clipboard restore does NOT: `restore_clipboard_later` (R20) fires ~300 ms
+  after ⌘V on its own thread and only if the clipboard still holds the
+  pasted text. A blocking restore starved our own webview of the queued ⌘V
+  (the onboarding try-box pasted the OLD clipboard — the target app must
+  get to process the keystroke before the restore lands). Missing
+  Accessibility degrades to clipboard-only plus a notification.
+- **Ready-time activation is launch-shape-aware** (`ready_activation`, R19):
+  the windowless tray-only launch gets the dock-tile nudge's
+  activate-and-hand-back (macOS 26 hidden-flag workaround), but a first-run
+  launch with the visible wizard activates and KEEPS focus — the hand-back
+  used to deactivate the app ~1 s in, making the wizard's first button need
+  an extra click just to re-activate the window.
 - **The mock IPC shim** (`src/ipc/mock.ts`) mirrors `commands.rs` event-for-
   event, which is what lets Playwright drive the real settings/overlay UI in a
   plain browser.

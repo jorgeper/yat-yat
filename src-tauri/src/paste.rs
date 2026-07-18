@@ -60,7 +60,11 @@ impl Paster {
             return Ok(false);
         }
 
-        // Save -> write -> paste -> restore.
+        // Save -> write -> paste -> schedule the restore. The restore MUST
+        // NOT block this (main) thread: the paste target can be Yat Yat's
+        // own webview (the onboarding try-box), whose ⌘V sits queued on the
+        // main thread until deliver returns — a blocking restore ran first
+        // and handed it the OLD clipboard.
         let saved = clipboard.get_text().ok();
         clipboard.set_text(text).context("writing clipboard")?;
         std::thread::sleep(Duration::from_millis(PRE_PASTE_DELAY_MS));
@@ -68,13 +72,29 @@ impl Paster {
         let enigo = self.enigo.as_mut().unwrap();
         send_paste_keystroke(enigo)?;
 
-        std::thread::sleep(Duration::from_millis(RESTORE_DELAY_MS));
         if let Some(saved) = saved {
-            let _ = clipboard.set_text(saved);
+            restore_clipboard_later(text.to_string(), saved, RESTORE_DELAY_MS);
         }
         Ok(true)
     }
 
+}
+
+/// Restore `saved` to the clipboard after `delay_ms`, WITHOUT blocking the
+/// caller (SPEC FR-3.1). The restore is conditional: it only happens if the
+/// clipboard still holds `pasted` — if anything else wrote the clipboard in
+/// the meantime (the user copied something, a newer dictation delivered),
+/// it is left alone.
+pub fn restore_clipboard_later(pasted: String, saved: String, delay_ms: u64) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(delay_ms));
+        let Ok(mut clipboard) = arboard::Clipboard::new() else {
+            return;
+        };
+        if clipboard.get_text().ok().as_deref() == Some(pasted.as_str()) {
+            let _ = clipboard.set_text(saved);
+        }
+    });
 }
 
 /// Plain clipboard write (Copy Last Transcription, history clicks, retry) —
@@ -102,4 +122,42 @@ fn send_paste_keystroke(enigo: &mut Enigo) -> Result<()> {
         .key(modifier, Direction::Release)
         .context("releasing paste modifier")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod restore_tests {
+    use super::*;
+
+    // R20: the deferred clipboard restore must not block the caller (that
+    // block is exactly what made pasting into Yat Yat's own windows deliver
+    // the OLD clipboard) and must not clobber a clipboard that changed
+    // underneath it.
+    #[test]
+    fn r20_restore_is_deferred_and_conditional() {
+        let mut cb = arboard::Clipboard::new().unwrap();
+        let original = cb.get_text().ok(); // preserve the dev machine's clipboard
+
+        // Still holding the pasted text after the delay -> restored.
+        cb.set_text("r20-pasted").unwrap();
+        let t0 = std::time::Instant::now();
+        restore_clipboard_later("r20-pasted".into(), "r20-saved".into(), 60);
+        assert!(
+            t0.elapsed() < std::time::Duration::from_millis(50),
+            "restore_clipboard_later must return immediately"
+        );
+        assert_eq!(cb.get_text().unwrap(), "r20-pasted", "no early restore");
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        assert_eq!(cb.get_text().unwrap(), "r20-saved", "restored after delay");
+
+        // Clipboard changed in the meantime -> left alone.
+        cb.set_text("r20-pasted").unwrap();
+        restore_clipboard_later("r20-pasted".into(), "r20-saved".into(), 60);
+        cb.set_text("r20-user-copied").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        assert_eq!(cb.get_text().unwrap(), "r20-user-copied", "newer write wins");
+
+        if let Some(original) = original {
+            let _ = cb.set_text(original);
+        }
+    }
 }

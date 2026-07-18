@@ -9,6 +9,7 @@ use crate::pipeline::Pipeline;
 use crate::registry::Registry;
 use crate::settings::Settings;
 use crate::stt::LoadedModel;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, RwLock};
 use tauri::{AppHandle, Emitter};
@@ -32,6 +33,9 @@ pub struct AppState {
     pub hotkeys: Mutex<Option<HotkeyService>>,
     /// The warm STT engine for the active model (SPEC §3: loaded once).
     engine: Mutex<Option<LoadedModel>>,
+    /// Per-model real-time-factor EMAs (SPEC13 FR-P2). In-memory only —
+    /// first run of a model estimates from the seed.
+    rtf: Mutex<HashMap<String, crate::progress::Rtf>>,
 }
 
 impl AppState {
@@ -57,7 +61,23 @@ impl AppState {
             downloads: DownloadManager::default(),
             hotkeys: Mutex::new(None),
             engine: Mutex::new(None),
+            rtf: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Estimated raw-STT seconds for `audio_secs` on the active model
+    /// (SPEC13 FR-P3).
+    pub fn expected_stt_secs(&self, audio_secs: f32) -> f32 {
+        let model = self.settings.read().unwrap().active_model.clone().unwrap_or_default();
+        let rtf = self.rtf.lock().unwrap().get(&model).copied().unwrap_or_default();
+        audio_secs * rtf.estimate()
+    }
+
+    /// Fold one measured raw-STT wall time into the active model's EMA
+    /// (SPEC13 FR-P5 — callers must exclude cleanup/enhancement time).
+    pub fn observe_rtf(&self, audio_secs: f32, wall_secs: f32) {
+        let model = self.settings.read().unwrap().active_model.clone().unwrap_or_default();
+        self.rtf.lock().unwrap().entry(model).or_default().observe(audio_secs, wall_secs);
     }
 
     pub fn settings_path(&self) -> PathBuf {
