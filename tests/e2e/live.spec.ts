@@ -66,14 +66,16 @@ test("E10b: live off renders the compact pill with no text region", async ({ pag
   await expect(page.getByTestId("live-text")).not.toBeAttached();
 });
 
-test("E10c: the settings toggle exists, defaults on, and persists", async ({ page }) => {
+test("E10c: the settings toggle exists, defaults off, and persists", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("settings-root")).toBeVisible();
 
   const toggle = page.getByTestId("live-transcription");
-  await expect(toggle).toBeChecked(); // default ON (SPEC3 FR-L1)
+  // Default OFF since 0.1.0-alpha.10 (owner decision; supersedes SPEC3
+  // FR-L1's default-on — divergence noted in ARCHITECTURE.md).
+  await expect(toggle).not.toBeChecked();
 
-  await toggle.uncheck();
+  await toggle.check();
   const persisted = await page.evaluate(() => {
     const saves = window.__mock!.calls().filter((c) => c.command === "set_settings");
     const last = saves[saves.length - 1]?.args?.settings as
@@ -81,6 +83,6 @@ test("E10c: the settings toggle exists, defaults on, and persists", async ({ pag
       | undefined;
     return last?.live_transcription;
   });
-  expect(persisted).toBe(false);
-  await expect(toggle).not.toBeChecked();
+  expect(persisted).toBe(true);
+  await expect(toggle).toBeChecked();
 });

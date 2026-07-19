@@ -121,6 +121,11 @@ Explicit skips (accessibility, menubar) persist in
 
 ## Live transcription loop (SPEC3)
 
+Post-SPEC3 divergence: `live_transcription` defaults **OFF** as of
+0.1.0-alpha.10 (owner decision, 2026-07-18 — SPEC3 FR-L1 shipped it on by
+default; E10c was updated to match). The feature itself is unchanged —
+users opt in from Settings → General.
+
 While recording with `live_transcription` on, a dedicated thread re-runs the
 warm engine over a non-destructive snapshot of the audio so far and emits the
 raw text to the overlay (`stream-text`). Cadence starts at 1 s and is governed

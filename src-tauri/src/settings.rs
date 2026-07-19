@@ -101,7 +101,9 @@ impl Default for Settings {
             launch_at_login: false,
             keep_history: true,
             collapse_repeats: true,
-            live_transcription: true,
+            // Default OFF since 0.1.0-alpha.10 (owner decision; supersedes
+            // SPEC3 FR-L1's default-on — divergence noted in ARCHITECTURE.md).
+            live_transcription: false,
             overlay_effect: "classic-bars".into(),
             overlay_theme: "indigo".into(),
             focus_guard: true,

@@ -143,7 +143,9 @@ export function defaultSettings(): Settings {
     launch_at_login: false,
     keep_history: true,
     collapse_repeats: true,
-    live_transcription: true,
+    // Mirrors settings.rs: default OFF since 0.1.0-alpha.10 (supersedes
+    // SPEC3 FR-L1 — see the ARCHITECTURE.md divergence note).
+    live_transcription: false,
     overlay_effect: "classic-bars",
     overlay_theme: "indigo",
     focus_guard: true,
