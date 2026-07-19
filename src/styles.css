@@ -453,6 +453,108 @@ button:focus-visible {
   pointer-events: none;
 }
 
+/* SPEC16 FR-U1 + owner follow-up: preview + segmented control stay pinned
+   at the top of the Appearance scroll; the galleries scroll beneath. */
+/* The Appearance section drops the scroller's own top padding — a sticky
+   child can never cover its parent's padding strip, so the pinned block
+   owns that spacing instead and pins at the true top edge. */
+.settings-content.flush-top {
+  padding-top: 0;
+}
+
+.appearance-pinned {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg);
+  margin: 0 -28px;
+  padding: 20px 28px 8px;
+  box-shadow: 0 6px 12px -8px rgba(0, 0, 0, 0.35);
+}
+
+.appearance-nav {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0 0;
+}
+
+/* Anchored section titles land below the pinned block, not under it. */
+.appearance-anchor {
+  scroll-margin-top: 190px;
+}
+
+.appearance-nav button {
+  border: 1px solid var(--hairline);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.appearance-nav button:hover {
+  background: var(--accent-soft);
+}
+
+/* SPEC16 FR-U2: the cinema-mode gallery — static swatch cards only. */
+.mode-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  border: 1px solid var(--hairline);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.mode-card:hover {
+  background: var(--accent-soft);
+}
+
+.mode-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.mode-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  height: 18px;
+  border-radius: 5px;
+  padding: 0 5px;
+  border: 1px solid var(--hairline);
+}
+
+.mode-swatch i {
+  width: 10px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.mode-name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.mode-tagline {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .picker-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));

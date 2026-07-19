@@ -1,5 +1,26 @@
 # Blockers / honest caveats
 
+-1. **SPEC16 §5 under-enumerated the count-literal amendments.** The spec
+   sanctioned exactly five count bumps (effects 15→28 ×3, themes 12→26 ×2),
+   and the GOAL16 DoD binds the tests/ diff to those "ONLY". Reality found
+   during implementation: (a) **E13a** (tests/e2e/appearance.spec.ts) also
+   asserts the picker counts — `toHaveCount(15)` / `toHaveCount(12)` — two
+   more count literals the spec missed, unavoidable because the pickers
+   render the full registries; (b) the unit tests' **`it(...)` titles**
+   ("has exactly 15 effects…", "has exactly 12 themes…") and U8's header
+   comment carry the same numbers, and leaving them stating 15/12 while
+   asserting 28/26 would make the suite lie about itself. Resolution, in
+   the spirit of §5 (count-only, nothing weakened): effects.test.ts —
+   3 assertion literals + 1 title literal + 1 header-comment count;
+   themes.test.ts — 2 assertion literals + 1 title literal;
+   appearance.spec.ts — 2 `toHaveCount` literals; and **E17b**
+   (tests/e2e/eggs.spec.ts, found when the suite ran) — 2 `toHaveCount`
+   literals plus the same number in its title and two comments (the test
+   proves Yat95 stays OUTSIDE the built-in picker, so its picker-count
+   assertions track the catalog size by design). Every amended line is a number swap;
+   no assertion, selector, or flow changed. This note exists instead of
+   gaming the DoD's diff check.
+
 0. **macOS 26 has no public API for "is my menu-bar item visible?"** Control
    Center owns the per-app allowance and hosts visible third-party items, so
    even window-server enumeration misattributes them. The onboarding gate

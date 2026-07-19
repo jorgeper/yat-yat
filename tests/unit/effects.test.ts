@@ -1,4 +1,4 @@
-// U8: the effect registry (SPEC6 §6) — 15 renderers, one interface, theme
+// U8: the effect registry (SPEC6 §6, counts amended per SPEC16 §5) — 29 renderers, one interface, theme
 // colors required everywhere (no hardcoded draw colors at the source level).
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -49,10 +49,10 @@ function frame(overrides: Partial<EffectFrame> = {}): EffectFrame {
 }
 
 describe("U8: effect registry", () => {
-  it("has exactly 15 effects with unique ids and the default present", () => {
-    expect(EFFECTS).toHaveLength(15);
+  it("has exactly 29 effects with unique ids and the default present", () => {
+    expect(EFFECTS).toHaveLength(29);
     const ids = EFFECTS.map((e) => e.id);
-    expect(new Set(ids).size).toBe(15);
+    expect(new Set(ids).size).toBe(29);
     expect(ids).toContain(DEFAULT_EFFECT);
   });
 
@@ -86,7 +86,7 @@ describe("U8: effect registry", () => {
     const modules = readdirSync(dir).filter(
       (f: string) => f.endsWith(".ts") && !["index.ts", "types.ts", "engine.ts"].includes(f),
     );
-    expect(modules.length).toBe(15);
+    expect(modules.length).toBe(29);
     const colorLiteral = /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|\b(?:white|black|red|blue|green|cyan|magenta|yellow|orange|purple)\b/;
     for (const file of modules) {
       const source = readFileSync(join(dir, file), "utf8");

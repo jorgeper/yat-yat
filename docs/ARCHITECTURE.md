@@ -154,8 +154,9 @@ The recording visualization is a canvas driven by `EffectEngine`
 (src/overlay/effects/engine.ts) through a deliberately small renderer
 interface — `init(ctx, w, h)` / `render(ctx, frame)` / `dispose()` with
 `frame = { level, levels, time, dt, colors, reducedMotion, width, height }`.
-15 built-ins live in src/overlay/effects/, one module each; the registry
-falls back to `classic-bars` on unknown ids. (One post-SPEC6 swap: the
+29 built-ins live in src/overlay/effects/, one module each (13 arrived with
+SPEC16's cinema modes, one more with the post-SPEC16 valley swap); the
+registry falls back to `classic-bars` on unknown ids. (One post-SPEC6 swap: the
 `vu-needle` analog meter read poorly in the wide, short pill — radial shapes
 waste the horizontal canvas — so `heartbeat`, an EKG-style scrolling trace,
 replaced it; saved `vu-needle` selections fall back to the default.) Rendering pauses whenever the
@@ -166,9 +167,31 @@ Colors are the theme's job: renderers draw exclusively with
 `frame.colors.{primary,accent,glow}`, resolved from the `--nh-fx-*` CSS
 variables on the pill root — U8 enforces "no hardcoded draw colors" at the
 source level. A theme is the 11-variable contract in THEMES.md applied via
-the `.nh-theme` class; 12 built-ins ship in src/overlay/themes/, and user
+the `.nh-theme` class; 26 built-ins ship in src/overlay/themes/, and user
 themes are drop-in .css files (size-capped, remote url() rejected —
 src-tauri/src/themes.rs, R11) loaded through `list_user_themes`.
+
+Post-SPEC16 swap (owner decision, same pattern as vu-needle→heartbeat): the
+`helix` mode (dna-helix + the `isla-amber` theme) was replaced by
+`the-valley` — a cozy pixel-farm daytime look pairing the new
+`pixel-valley` effect (chunky clouds over the sky-colored pill background,
+pixel hills rolling with the voice history, crops sprouting on strong
+syllables) with the new light `the-valley` theme. That took the effect
+count to **29** (owner-sanctioned count amendment; themes hold at 26). The
+`dna-helix` effect stays in the catalog; saved `isla-amber`/`valley-night`
+selections fall back to the default theme.
+
+**Cinema modes (SPEC16)**: 14 riff-named presets in `src/overlay/modes.ts`,
+each a designed pair of one effect and one theme. A mode is derived
+presentation sugar — clicking a gallery card writes `overlay_effect` +
+`overlay_theme` in a single save, and the pure `modeFor(effect, theme)`
+derives selection (diverging via either à-la-carte picker deselects the
+card). No `overlay_mode` field exists anywhere; the effect contract above
+carried no changes (mode effects are level-driven, recording-time
+renderers like every other). The Appearance page stays one scrollable
+surface: a sticky Modes/Effects/Themes segmented control scroll-anchors
+the sections, cards are static swatches, and the single real-engine
+preview retargets on card hover (preview-only; settings write on click).
 
 **User JS/TS effects are deferred deliberately**: user code in the overlay
 webview needs an IPC-less sandbox and a frozen API. The renderer interface

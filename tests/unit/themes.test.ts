@@ -10,10 +10,10 @@ import {
 import { DEFAULT_THEME, getBuiltinTheme, THEMES } from "../../src/overlay/themes";
 
 describe("U9: built-in themes", () => {
-  it("has exactly 12 themes with unique ids and the default present", () => {
-    expect(THEMES).toHaveLength(12);
+  it("has exactly 26 themes with unique ids and the default present", () => {
+    expect(THEMES).toHaveLength(26);
     const ids = THEMES.map((t) => t.id);
-    expect(new Set(ids).size).toBe(12);
+    expect(new Set(ids).size).toBe(26);
     expect(ids).toContain(DEFAULT_THEME);
   });
 

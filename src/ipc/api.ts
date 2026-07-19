@@ -39,6 +39,13 @@ async function getIpc(): Promise<Ipc> {
   return ipc;
 }
 
+// Browser mode: resolve the mock IPC module eagerly so its window.__mock
+// e2e hook attaches at page load instead of on the first listen() — the
+// first render used to win that race on heavier bundles. No-op under Tauri.
+if (!isTauri()) {
+  void getIpc();
+}
+
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   return (await getIpc()).invoke<T>(command, args);
 }

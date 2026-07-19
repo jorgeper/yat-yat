@@ -250,7 +250,10 @@ export default function SettingsApp() {
           </button>
         ))}
       </nav>
-      <main className="settings-content" data-testid={`section-${section}`}>
+      <main
+        className={`settings-content ${section === "appearance" ? "flush-top" : ""}`}
+        data-testid={`section-${section}`}
+      >
         {captureDead && (
           <div className="banner" data-testid="capture-banner">
             <span>

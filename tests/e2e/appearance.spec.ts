@@ -10,8 +10,8 @@ test("E13a: pickers render, persist, and survive a reload", async ({ page }) => 
 
   await expect(page.getByTestId("appearance-preview")).toBeVisible();
   await expect(page.getByTestId("preview-canvas")).toBeVisible();
-  await expect(page.getByTestId("effect-picker").locator("button")).toHaveCount(15);
-  await expect(page.getByTestId("theme-picker").locator("button")).toHaveCount(12);
+  await expect(page.getByTestId("effect-picker").locator("button")).toHaveCount(29);
+  await expect(page.getByTestId("theme-picker").locator("button")).toHaveCount(26);
 
   // Defaults selected.
   await expect(page.getByTestId("effect-classic-bars")).toHaveClass(/selected/);

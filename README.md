@@ -106,12 +106,20 @@ itself shows state — idle, **recording (red dot)**, and processing.
 
 ## Looks
 
-Settings → **Appearance** picks the recording visualizer (15 effects, from
+Settings → **Appearance** picks the recording visualizer (29 effects, from
 the classic bars to oscilloscope, starfield, fireflies, and aurora) and the
-overlay theme (12 built-ins — Phosphor CRT, Vaporwave, Nord, Newsprint, …),
+overlay theme (26 built-ins — Phosphor CRT, Vaporwave, Nord, Newsprint, …),
 with a live preview that runs the real engine on fake voice. Fonts are part
 of the theme. You can also write your own theme as a single CSS file — see
 [THEMES.md](THEMES.md) for the contract and the drop-in folder.
+
+**Modes** are one-click presets pairing an effect with its matching theme —
+fourteen of them, riffing on four decades of talking machines from the
+movies (a scanning red eye, a phosphor war-game terminal, glyph rain, a
+chrome blob, console lamps, a neon diner sign, …). Hover a card to preview
+it live; click to apply both halves at once. Mixing your own effect+theme
+combination afterwards works exactly as before — a mode is just a shortcut,
+not a lock.
 
 ## Live transcription
 

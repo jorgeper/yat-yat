@@ -102,8 +102,10 @@ Full map with measured perf numbers: `docs/ARCHITECTURE.md`. The essentials:
   localhost-only in code (R8).
 - **Appearance**: effects draw ONLY with `frame.colors` from the active
   theme's CSS variables — U8 fails any color literal in an effect module.
-  Exactly 15 effects / 12 built-in themes are asserted by tests; swapping
-  one means keeping the counts.
+  Exactly 29 effects / 26 built-in themes are asserted by tests; swapping
+  one means keeping the counts. SPEC16's 14 cinema **modes**
+  (`src/overlay/modes.ts`) are derived effect+theme pairs — no
+  `overlay_mode` setting exists; selection comes from `modeFor`.
 - **Onboarding** advances only on *verified system state* (polled), never on
   clicks; gate logic is the pure `firstUnmetStep`. macOS re-keys the
   Accessibility grant on every ad-hoc-signed rebuild — `install:app` resets
