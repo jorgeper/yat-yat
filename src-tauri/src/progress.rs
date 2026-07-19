@@ -73,6 +73,50 @@ impl Rtf {
     }
 }
 
+/// The per-model RTF map with debounced persistence (SPEC14 FR-D5, R23):
+/// observations only mark the store dirty — the injected writer runs at
+/// flush time (return-to-idle / app exit), never per observation. With live
+/// transcription on, the old write-per-observation hit the disk every 1–4 s
+/// for a whole recording.
+pub struct RtfStore {
+    map: std::collections::HashMap<String, Rtf>,
+    dirty: bool,
+}
+
+impl RtfStore {
+    pub fn new(map: std::collections::HashMap<String, Rtf>) -> Self {
+        Self { map, dirty: false }
+    }
+
+    /// Current estimate for one model (the seed when never measured).
+    pub fn estimate(&self, model: &str) -> f32 {
+        self.map.get(model).copied().unwrap_or_default().estimate()
+    }
+
+    /// Fold one measurement in and mark the store dirty. Never writes.
+    pub fn observe(&mut self, model: &str, audio_secs: f32, wall_secs: f32) {
+        self.map
+            .entry(model.to_string())
+            .or_default()
+            .observe(audio_secs, wall_secs);
+        self.dirty = true;
+    }
+
+    /// Invoke `write` with the map — only when dirty — then clear the flag.
+    /// Returns whether a write happened.
+    pub fn flush(
+        &mut self,
+        write: impl FnOnce(&std::collections::HashMap<String, Rtf>),
+    ) -> bool {
+        if !self.dirty {
+            return false;
+        }
+        self.dirty = false;
+        write(&self.map);
+        true
+    }
+}
+
 /// Load the per-model RTF map from disk. Missing or corrupt files read as
 /// empty (models fall back to the seed).
 pub fn load_rtf_map(path: &std::path::Path) -> std::collections::HashMap<String, Rtf> {
@@ -180,6 +224,50 @@ mod tests {
         // still replaces the seed.
         rtf.observe(10.0, 2.0);
         assert!((rtf.estimate() - 0.2).abs() < 1e-6);
+    }
+
+    // R23: RTF persistence is debounced (SPEC14 FR-D5) — observations mark
+    // dirty without invoking the writer; a flush writes exactly once and
+    // clears the flag; flushing a clean store writes nothing.
+    #[test]
+    fn r23_observe_marks_dirty_without_writing() {
+        let mut store = RtfStore::new(Default::default());
+        let mut writes = 0;
+        store.observe("m", 10.0, 2.0);
+        store.observe("m", 10.0, 3.0);
+        store.observe("other", 5.0, 1.0);
+        // No flush yet — the writer must never have run.
+        assert_eq!(writes, 0);
+        assert!((store.estimate("m") - (0.2 + ALPHA * (0.3 - 0.2))).abs() < 1e-6);
+
+        assert!(store.flush(|map| {
+            writes += 1;
+            assert_eq!(map.len(), 2, "flush sees every observed model");
+        }));
+        assert_eq!(writes, 1, "one flush, one write — not one per observation");
+    }
+
+    #[test]
+    fn r23_flush_without_observation_writes_nothing() {
+        let mut store = RtfStore::new(Default::default());
+        let mut writes = 0;
+        assert!(!store.flush(|_| writes += 1));
+        assert_eq!(writes, 0, "a clean store never touches the disk");
+
+        // Dirty → flush → clean again: the second flush is also a no-write.
+        store.observe("m", 10.0, 2.0);
+        assert!(store.flush(|_| writes += 1));
+        assert!(!store.flush(|_| writes += 1));
+        assert_eq!(writes, 1);
+    }
+
+    #[test]
+    fn r23_estimate_reads_never_dirty_the_store() {
+        let mut store = RtfStore::new(Default::default());
+        assert_eq!(store.estimate("never-measured"), DEFAULT_RTF);
+        let mut writes = 0;
+        assert!(!store.flush(|_| writes += 1));
+        assert_eq!(writes, 0);
     }
 
     // R21: per-model RTFs survive relaunch via <data dir>/rtf.json.

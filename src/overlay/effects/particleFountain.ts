@@ -1,7 +1,7 @@
 // particle-fountain: particles spray upward from the center as you speak.
 
 import type { EffectFrame, EffectRenderer } from "./types";
-import { mulberry } from "./types";
+import { compactInPlace, mulberry } from "./types";
 
 interface P {
   x: number;
@@ -14,13 +14,13 @@ interface P {
 
 export function createParticleFountain(): EffectRenderer {
   const rand = mulberry(42);
-  let particles: P[] = [];
+  const particles: P[] = [];
   return {
     init() {
-      particles = [];
+      particles.length = 0;
     },
     dispose() {
-      particles = [];
+      particles.length = 0;
     },
     render(ctx, frame: EffectFrame) {
       const spawnBudget = frame.reducedMotion ? 1 : 6;
@@ -35,7 +35,7 @@ export function createParticleFountain(): EffectRenderer {
           accent: rand() > 0.7,
         });
       }
-      particles = particles.filter((p) => p.life > 0);
+      compactInPlace(particles, (p) => p.life > 0);
       for (const p of particles) {
         p.x += p.vx * frame.dt;
         p.y += p.vy * frame.dt;

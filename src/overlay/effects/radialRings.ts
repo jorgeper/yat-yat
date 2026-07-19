@@ -1,6 +1,7 @@
 // radial-rings: rings burst outward from the center on speech peaks.
 
 import type { EffectFrame, EffectRenderer } from "./types";
+import { compactInPlace } from "./types";
 
 interface Ring {
   r: number;
@@ -9,15 +10,15 @@ interface Ring {
 }
 
 export function createRadialRings(): EffectRenderer {
-  let rings: Ring[] = [];
+  const rings: Ring[] = [];
   let cooldown = 0;
   return {
     init() {
-      rings = [];
+      rings.length = 0;
       cooldown = 0;
     },
     dispose() {
-      rings = [];
+      rings.length = 0;
     },
     render(ctx, frame: EffectFrame) {
       cooldown -= frame.dt;
@@ -29,7 +30,7 @@ export function createRadialRings(): EffectRenderer {
       const cx = frame.width / 2;
       const cy = frame.height / 2;
       const maxR = Math.max(frame.width, frame.height) / 2;
-      rings = rings.filter((ring) => ring.life > 0);
+      compactInPlace(rings, (ring) => ring.life > 0);
       for (const ring of rings) {
         ring.r += (30 + frame.level * 120) * frame.dt;
         ring.life -= frame.dt / (frame.reducedMotion ? 2.2 : 1.4);

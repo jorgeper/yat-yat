@@ -70,3 +70,37 @@ export function firstUnmetStep(snap: GateSnapshot, skips: readonly string[]): St
 export function stepMet(step: StepId, snap: GateSnapshot, skips: readonly string[]): boolean {
   return gateMet(step, snap, skips);
 }
+
+/**
+ * Which externally-verified facts a polling tick must re-read for a step
+ * (SPEC14 FR-S4, U21). Mirrors exactly what gateMet reads: the tray
+ * window-server probe runs only on the menubar step, and captureReady — the
+ * one getAppInfo-backed fact — only on the accessibility step, so a tick
+ * never issues more than one getAppInfo. modelReady is computed locally
+ * (models + settings) and platform never changes — neither needs a re-read.
+ * Full snapshots (mount, step navigation, re-show) read everything.
+ */
+export interface SnapshotFacts {
+  microphone: boolean;
+  accessibility: boolean;
+  captureReady: boolean;
+  trayVisible: boolean;
+}
+
+export const ALL_FACTS: SnapshotFacts = {
+  microphone: true,
+  accessibility: true,
+  captureReady: true,
+  trayVisible: true,
+};
+
+export function factsForStep(step: StepId): SnapshotFacts {
+  return {
+    // welcome's gate reads microphone/accessibility (any grant proves a
+    // returning user) — see gateMet.
+    microphone: step === "welcome" || step === "microphone",
+    accessibility: step === "welcome" || step === "accessibility",
+    captureReady: step === "accessibility",
+    trayVisible: step === "menubar",
+  };
+}

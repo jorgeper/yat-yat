@@ -46,6 +46,25 @@ export interface EffectDef {
 export const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
+/**
+ * Level for bar `i` of `count`: the newest `count` entries of `levels`,
+ * right-aligned, without allocating a per-frame slice (SPEC14 FR-R2).
+ */
+export function levelAt(levels: readonly number[], count: number, i: number): number {
+  const shown = Math.min(levels.length, count);
+  const pad = count - shown;
+  return i < pad ? 0 : levels[levels.length - shown + i - pad];
+}
+
+/** Drop dead entries in place — no per-frame filter() array (SPEC14 FR-R2). */
+export function compactInPlace<T>(items: T[], alive: (item: T) => boolean): void {
+  let n = 0;
+  for (const item of items) {
+    if (alive(item)) items[n++] = item;
+  }
+  items.length = n;
+}
+
 /** Deterministic pseudo-random for stable particle layouts. */
 export function mulberry(seed: number): () => number {
   let a = seed >>> 0;

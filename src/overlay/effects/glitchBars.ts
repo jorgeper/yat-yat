@@ -1,7 +1,7 @@
 // glitch-bars: level bars with digital jitter and displaced slices on peaks.
 
 import type { EffectFrame, EffectRenderer } from "./types";
-import { mulberry } from "./types";
+import { levelAt, mulberry } from "./types";
 
 const BAR_W = 4;
 const GAP = 2;
@@ -13,12 +13,10 @@ export function createGlitchBars(): EffectRenderer {
     dispose() {},
     render(ctx, frame: EffectFrame) {
       const count = Math.floor(frame.width / (BAR_W + GAP));
-      const recent = frame.levels.slice(-count);
-      const pad = count - recent.length;
       const glitchy = !frame.reducedMotion && frame.level > 0.45;
 
       for (let i = 0; i < count; i++) {
-        const level = i < pad ? 0 : recent[i - pad];
+        const level = levelAt(frame.levels, count, i);
         const h = Math.max(2, level * (frame.height - 4));
         let x = i * (BAR_W + GAP);
         let y = (frame.height - h) / 2;

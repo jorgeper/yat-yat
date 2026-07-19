@@ -9,7 +9,10 @@ default-run = "yat-yat"
 
 [lib]
 name = "yatyat_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# SPEC14 FR-B3: desktop builds only need the rlib — the mobile template's
+# staticlib/cdylib each paid an extra full LTO link and a ~245 MB artifact.
+# Restore ["staticlib", "cdylib", "rlib"] when an iOS/Android target lands.
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -34,10 +37,18 @@ env_logger = "0.11"
 once_cell = "1"
 regex = "1"
 chrono = { version = "0.4", features = ["serde"] }
-dirs = "5"
+dirs = "6"
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
-reqwest = { version = "0.12", features = ["json", "stream"] }
+# SPEC14 FR-B1: default features off + rustls — the same stack
+# tauri-plugin-updater already links, so the binary carries ONE HTTP/TLS
+# implementation instead of two (0.12 native-tls + 0.13 rustls). Network use
+# is unchanged: user-initiated model downloads + localhost enhancement only.
+reqwest = { version = "0.13", default-features = false, features = [
+  "json",
+  "stream",
+  "rustls",
+] }
 futures-util = "0.3"
 sha2 = "0.10"
 tar = "0.4"

@@ -5,6 +5,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../ipc/api";
 import type { Settings, UserTheme } from "../ipc/types";
+import { usePageVisible } from "../lib/usePageVisible";
+import { invalidateAppliedTheme } from "../overlay/applyTheme";
 import { EFFECTS } from "../overlay/effects";
 import { EffectEngine } from "../overlay/effects/engine";
 import { getBuiltinTheme, THEMES } from "../overlay/themes";
@@ -33,8 +35,12 @@ export default function AppearanceSection({
   const [userThemes, setUserThemes] = useState<UserTheme[]>([]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<EffectEngine | null>(null);
+  const pageVisible = usePageVisible();
 
   const loadUserThemes = useCallback(() => {
+    // Edited theme files may resolve differently now — let the overlay's
+    // memoized applyTheme re-fetch on its next show (SPEC14 FR-R6).
+    invalidateAppliedTheme();
     api.listUserThemes().then(setUserThemes).catch(console.error);
   }, []);
 
@@ -55,9 +61,12 @@ export default function AppearanceSection({
     engineRef.current?.refreshColors();
   }, [settings.overlay_theme, userThemes]);
 
-  // The preview engine: real renderers, synthetic voice.
+  // The preview engine: real renderers, synthetic voice. Gated on page
+  // visibility (SPEC14 FR-S3) — WKWebView pauses rAF for hidden windows but
+  // NOT timers, so the 25 Hz feeder kept running if the window hid on this
+  // section.
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current || !pageVisible) return;
     const engine = new EffectEngine(canvasRef.current);
     engineRef.current = engine;
     engine.setEffect(settings.overlay_effect);
@@ -72,7 +81,7 @@ export default function AppearanceSection({
       engineRef.current = null;
       engine.dispose();
     };
-  }, [settings.overlay_effect]);
+  }, [settings.overlay_effect, pageVisible]);
 
   return (
     <>

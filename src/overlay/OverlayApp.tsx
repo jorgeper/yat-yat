@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, listen } from "../ipc/api";
+import type { ShowOverlayPayload } from "../ipc/types";
 import { danceMatches, SleepTracker, SLEEP_LEVEL } from "../lib/eggs";
 import { EMPTY_LIVE, stabilize, type LiveText } from "../lib/liveText";
 import { BAR_COUNT } from "../lib/waveform";
@@ -32,6 +33,9 @@ export default function OverlayApp() {
   // from settings at every recording start.
   const [wiggling, setWiggling] = useState(false);
   const [asleep, setAsleep] = useState(false);
+  // Mirror of `asleep` readable from the 30 Hz mic-level handler without
+  // scheduling React work on every loud sample (SPEC14 FR-R4).
+  const asleepRef = useRef(false);
   const eggsRef = useRef(true);
   const danceCountRef = useRef(0);
   const sleepRef = useRef<SleepTracker | null>(null);
@@ -65,35 +69,29 @@ export default function OverlayApp() {
       })
       .catch(() => applyTheme(""));
     const unlisteners: Array<() => void> = [];
+    let cancelled = false;
     (async () => {
       unlisteners.push(
-        await listen<{
-          state: string;
-          live?: boolean;
-          effect?: string;
-          theme?: string;
-          from_app?: string;
-          to_app?: string;
-        }>(
+        await listen<ShowOverlayPayload>(
           "show-overlay",
-          ({ state, live, effect, theme, from_app, to_app }) => {
+          ({ state, live, effect, theme, easter_eggs, from_app, to_app }) => {
             if (state === "recording") {
               startedRef.current = Date.now();
               setElapsed(0);
               // New recording: reset the stabilizer (SPEC3 FR-L4).
               liveTextRef.current = EMPTY_LIVE;
               setLiveText(EMPTY_LIVE);
-              // Eggs reset per recording; the switch re-reads too.
+              // Eggs reset per recording. The switch rides the show payload
+              // (SPEC14 FR-R5) — Rust already holds the settings lock there,
+              // so the old per-recording get_settings round-trip is gone.
               danceCountRef.current = 0;
               setWiggling(false);
               sleepRef.current = new SleepTracker(Date.now);
+              asleepRef.current = false;
               setAsleep(false);
-              api
-                .getSettings()
-                .then((s) => {
-                  eggsRef.current = s.easter_eggs !== false;
-                })
-                .catch(() => {});
+            }
+            if (easter_eggs !== undefined) {
+              eggsRef.current = easter_eggs !== false;
             }
             if (state === "focus-changed") {
               setFocusApps({ from: from_app ?? "", to: to_app ?? "" });
@@ -115,14 +113,25 @@ export default function OverlayApp() {
         }),
         await listen<number>("transcribe-progress", (fraction) => {
           if (stateRef.current !== "transcribing") return;
-          progressRef.current = advance(progressRef.current, fraction);
-          setProgress(progressRef.current);
+          const next = advance(progressRef.current, fraction);
+          // Quantize the setState to whole percent (what data-progress and
+          // the bar fill actually show) — sub-percent ticks re-rendered the
+          // whole pill 10x/s for nothing (SPEC14 FR-R4).
+          const changed =
+            Math.round(next * 100) !== Math.round(progressRef.current * 100);
+          progressRef.current = next;
+          if (changed) setProgress(next);
         }),
         await listen<number>("mic-level", (level) => {
           engineRef.current?.feed(level);
-          // Sleepy-waveform egg: any loud sample wakes instantly.
+          // Sleepy-waveform egg: any loud sample wakes instantly. The ref
+          // guard keeps this a transition, not a 30 Hz setState while
+          // speaking (SPEC14 FR-R4).
           sleepRef.current?.feed(level);
-          if (level >= SLEEP_LEVEL) setAsleep(false);
+          if (asleepRef.current && level >= SLEEP_LEVEL) {
+            asleepRef.current = false;
+            setAsleep(false);
+          }
         }),
         await listen<{ text: string }>("stream-text", ({ text }) => {
           liveTextRef.current = stabilize(liveTextRef.current, text);
@@ -140,8 +149,17 @@ export default function OverlayApp() {
           }
         }),
       );
+      // Unmounted while the awaits above were in flight: listeners that
+      // registered after cleanup ran would leak forever (SPEC14 FR-R7).
+      if (cancelled) {
+        unlisteners.forEach((u) => u());
+        unlisteners.length = 0;
+      }
     })();
-    return () => unlisteners.forEach((u) => u());
+    return () => {
+      cancelled = true;
+      unlisteners.forEach((u) => u());
+    };
   }, []);
 
   // Effect engine lifecycle: runs while the recording canvas is mounted,
@@ -171,11 +189,14 @@ export default function OverlayApp() {
   // CSS-only — the engine and recording never notice.
   useEffect(() => {
     if (state !== "recording") {
+      asleepRef.current = false;
       setAsleep(false);
       return;
     }
     const timer = setInterval(() => {
-      setAsleep(eggsRef.current && (sleepRef.current?.isAsleep() ?? false));
+      const next = eggsRef.current && (sleepRef.current?.isAsleep() ?? false);
+      asleepRef.current = next;
+      setAsleep(next);
     }, 500);
     return () => clearInterval(timer);
   }, [state]);

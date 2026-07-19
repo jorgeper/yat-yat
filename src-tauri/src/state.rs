@@ -9,7 +9,6 @@ use crate::pipeline::Pipeline;
 use crate::registry::Registry;
 use crate::settings::Settings;
 use crate::stt::LoadedModel;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, RwLock};
 use tauri::{AppHandle, Emitter};
@@ -33,10 +32,17 @@ pub struct AppState {
     pub hotkeys: Mutex<Option<HotkeyService>>,
     /// The warm STT engine for the active model (SPEC §3: loaded once).
     engine: Mutex<Option<LoadedModel>>,
-    /// Per-model real-time-factor EMAs (SPEC13 FR-P2, since made
-    /// disk-backed — see the ARCHITECTURE.md divergence note). Loaded from
-    /// rtf.json at startup; a model never measured estimates from the seed.
-    rtf: Mutex<HashMap<String, crate::progress::Rtf>>,
+    /// Per-model real-time-factor EMAs (SPEC13 FR-P2, disk-backed — see the
+    /// ARCHITECTURE.md divergence note). Loaded from rtf.json at startup;
+    /// persistence is debounced (SPEC14 FR-D5): observations mark the store
+    /// dirty, `flush_rtf` writes at return-to-idle / app exit.
+    rtf: Mutex<crate::progress::RtfStore>,
+    /// SPEC14 FR-A2: set the moment `finish_recording` begins so an
+    /// about-to-start live pass yields the engine to the stop path.
+    pub stop_pending: std::sync::atomic::AtomicBool,
+    /// SPEC14 FR-D3: the in-flight background write of the retained WAV.
+    /// Retry must join it before reading — never a partial file.
+    wav_write: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl AppState {
@@ -63,7 +69,28 @@ impl AppState {
             downloads: DownloadManager::default(),
             hotkeys: Mutex::new(None),
             engine: Mutex::new(None),
-            rtf: Mutex::new(rtf),
+            rtf: Mutex::new(crate::progress::RtfStore::new(rtf)),
+            stop_pending: std::sync::atomic::AtomicBool::new(false),
+            wav_write: Mutex::new(None),
+        }
+    }
+
+    /// Hand off the retained-WAV write to a background thread (SPEC14 FR-D3).
+    /// Joins any straggler from the previous dictation first so two writes
+    /// can never interleave on the same file.
+    pub fn spawn_wav_write(&self, handle: std::thread::JoinHandle<()>) {
+        let mut slot = self.wav_write.lock().unwrap();
+        if let Some(prev) = slot.take() {
+            let _ = prev.join();
+        }
+        *slot = Some(handle);
+    }
+
+    /// Block until any in-flight retained-WAV write completes (the Retry
+    /// path's partial-file guard, SPEC14 FR-D3).
+    pub fn await_wav_write(&self) {
+        if let Some(handle) = self.wav_write.lock().unwrap().take() {
+            let _ = handle.join();
         }
     }
 
@@ -71,17 +98,26 @@ impl AppState {
     /// (SPEC13 FR-P3).
     pub fn expected_stt_secs(&self, audio_secs: f32) -> f32 {
         let model = self.settings.read().unwrap().active_model.clone().unwrap_or_default();
-        let rtf = self.rtf.lock().unwrap().get(&model).copied().unwrap_or_default();
-        audio_secs * rtf.estimate()
+        audio_secs * self.rtf.lock().unwrap().estimate(&model)
     }
 
     /// Fold one measured raw-STT wall time into a model's EMA (SPEC13
-    /// FR-P5 — raw engine time only) and persist the map so relaunches
-    /// start calibrated.
+    /// FR-P5 — raw engine time only). Marks the store dirty; the disk write
+    /// happens at `flush_rtf` (SPEC14 FR-D5), never here — live passes used
+    /// to write rtf.json every 1–4 s.
     fn observe_rtf(&self, model: &str, audio_secs: f32, wall_secs: f32) {
-        let mut rtf = self.rtf.lock().unwrap();
-        rtf.entry(model.to_string()).or_default().observe(audio_secs, wall_secs);
-        crate::progress::save_rtf_map(&self.data_dir.join("rtf.json"), &rtf);
+        self.rtf.lock().unwrap().observe(model, audio_secs, wall_secs);
+    }
+
+    /// Persist the RTF map if any observation landed since the last flush
+    /// (SPEC14 FR-D5: called at return-to-idle and app exit; R21's
+    /// corrupt/missing-read semantics are load-side and unchanged).
+    pub fn flush_rtf(&self) {
+        let path = self.data_dir.join("rtf.json");
+        self.rtf
+            .lock()
+            .unwrap()
+            .flush(|map| crate::progress::save_rtf_map(&path, map));
     }
 
     pub fn settings_path(&self) -> PathBuf {
@@ -103,9 +139,15 @@ impl AppState {
             .unwrap_or(false)
     }
 
-    /// Transcribe through the warm engine, (re)loading it if the active model
-    /// changed or nothing is loaded yet. Emits model-state-changed events.
-    pub fn transcribe(&self, app: &AppHandle, samples: &[f32]) -> anyhow::Result<String> {
+    /// Load the active model into `engine` if it isn't already the loaded one.
+    /// Runs under the engine mutex the caller holds; emits the same
+    /// model-state-changed events the lazy path always has. Returns the
+    /// active model id (SPEC14 FR-W1).
+    fn load_if_needed(
+        &self,
+        app: &AppHandle,
+        engine: &mut Option<LoadedModel>,
+    ) -> anyhow::Result<String> {
         let active_id = self
             .settings
             .read()
@@ -118,7 +160,6 @@ impl AppState {
             .get(&active_id)
             .ok_or_else(|| anyhow::anyhow!("unknown model '{active_id}'"))?;
 
-        let mut engine = self.engine.lock().unwrap();
         let needs_load = engine.as_ref().map(|m| m.model_id != active_id).unwrap_or(true);
         if needs_load {
             // Drop the old engine first: avoids 2x peak RAM on big models.
@@ -137,6 +178,33 @@ impl AppState {
                 }
             }
         }
+        Ok(active_id)
+    }
+
+    /// Pre-warm the engine (SPEC14 FR-W2). Call from a background thread
+    /// ONLY — this blocks on the engine mutex and then on the multi-second
+    /// model load; a stop arriving mid-load simply queues on the same mutex,
+    /// exactly as the lazy path always behaved (just starting earlier).
+    pub fn ensure_loaded(&self, app: &AppHandle) -> anyhow::Result<()> {
+        let mut engine = self.engine.lock().unwrap();
+        self.load_if_needed(app, &mut engine).map(|_| ())
+    }
+
+    /// Cheap pre-warm probe: true when nothing is loaded AND no load is in
+    /// flight (a held mutex means a loader is already working — don't stack
+    /// another). Never blocks (SPEC14 FR-W2c).
+    pub fn engine_needs_warm(&self) -> bool {
+        match self.engine.try_lock() {
+            Ok(guard) => guard.is_none(),
+            Err(_) => false,
+        }
+    }
+
+    /// Transcribe through the warm engine, (re)loading it if the active model
+    /// changed or nothing is loaded yet. Emits model-state-changed events.
+    pub fn transcribe(&self, app: &AppHandle, samples: &[f32]) -> anyhow::Result<String> {
+        let mut engine = self.engine.lock().unwrap();
+        let active_id = self.load_if_needed(app, &mut engine)?;
         // Time ONLY the engine call (model load above is excluded) and feed
         // the per-model RTF estimate. Live passes run through here too, so
         // with live transcription on, the progress estimate is calibrated

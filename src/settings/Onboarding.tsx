@@ -10,12 +10,16 @@ import { api, listen } from "../ipc/api";
 import { permissions } from "../ipc/permissions";
 import type { DownloadProgress, ModelStatus, Settings } from "../ipc/types";
 import {
+  ALL_FACTS,
+  factsForStep,
   firstUnmetStep,
   stepMet,
   stepsFor,
   type GateSnapshot,
+  type SnapshotFacts,
   type StepId,
 } from "../lib/onboarding";
+import { usePageVisible } from "../lib/usePageVisible";
 import { backTarget, canNavigateTo, isReview, jumpTarget, nextStep } from "../lib/wizardNav";
 
 const POLL_MS = 1000;
@@ -30,23 +34,33 @@ const STEP_NAMES: Record<StepId, string> = {
   try: "Try it",
 };
 
-async function readSnapshot(models: ModelStatus[], settings: Settings): Promise<GateSnapshot> {
+async function readSnapshot(
+  models: ModelStatus[],
+  settings: Settings,
+  facts: SnapshotFacts,
+  prev: GateSnapshot | null,
+): Promise<GateSnapshot> {
   const perms = await permissions();
-  const info = await api.getAppInfo();
   // One failing check must never sink the whole snapshot (a rejected
   // Promise.all blanked the wizard on Windows): an unverifiable fact reads
   // as unmet and the poll keeps retrying.
   const orFalse = (p: Promise<boolean>) => p.catch(() => false);
+  // SPEC14 FR-S4: re-verify only the requested facts; the rest carry over
+  // from the previous snapshot (no prev ⇒ read everything). Notably the
+  // tray window-server probe runs only when asked for, and platform is
+  // fetched exactly once instead of a getAppInfo per tick.
+  const full = prev == null;
   const [microphone, accessibility, captureReady, trayVisible] = await Promise.all([
-    orFalse(perms.checkMicrophone()),
-    orFalse(perms.checkAccessibility()),
-    orFalse(perms.checkCaptureReady()),
-    orFalse(perms.checkTrayVisible()),
+    full || facts.microphone ? orFalse(perms.checkMicrophone()) : prev.microphone,
+    full || facts.accessibility ? orFalse(perms.checkAccessibility()) : prev.accessibility,
+    full || facts.captureReady ? orFalse(perms.checkCaptureReady()) : prev.captureReady,
+    full || facts.trayVisible ? orFalse(perms.checkTrayVisible()) : prev.trayVisible,
   ]);
+  const platform = prev?.platform ?? (await api.getAppInfo()).platform;
   const modelReady =
     settings.active_model != null &&
     models.some((m) => m.id === settings.active_model && m.downloaded);
-  return { microphone, accessibility, captureReady, trayVisible, modelReady, platform: info.platform };
+  return { microphone, accessibility, captureReady, trayVisible, modelReady, platform };
 }
 
 function StatusChip({ ok, checking, label }: { ok: boolean; checking?: boolean; label?: string }) {
@@ -73,17 +87,27 @@ export default function Onboarding({
 }) {
   const [snapshot, setSnapshot] = useState<GateSnapshot | null>(null);
   const [step, setStep] = useState<StepId | null>(null);
+  const pageVisible = usePageVisible();
   const skipsRef = useRef<string[]>([...settings.onboarding_skips]);
   const modelsRef = useRef(models);
   modelsRef.current = models;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const snapshotRef = useRef<GateSnapshot | null>(null);
   // Gate-transition tracking for the displayed step (auto-advance trigger).
   const metRef = useRef<{ step: StepId | null; met: boolean }>({ step: null, met: false });
 
-  const refreshSnapshot = useCallback(async () => {
+  // facts defaults to a full read; polling passes the displayed step's plan
+  // (SPEC14 FR-S4) so ticks only re-verify what the step gates on.
+  const refreshSnapshot = useCallback(async (facts: SnapshotFacts = ALL_FACTS) => {
     try {
-      const snap = await readSnapshot(modelsRef.current, settingsRef.current);
+      const snap = await readSnapshot(
+        modelsRef.current,
+        settingsRef.current,
+        facts,
+        facts === ALL_FACTS ? null : snapshotRef.current,
+      );
+      snapshotRef.current = snap;
       setSnapshot(snap);
       return snap;
     } catch (e) {
@@ -106,15 +130,20 @@ export default function Onboarding({
     });
   }, [refreshSnapshot, startAtWelcome]);
 
-  // Poll while visible; keeps every chip truthful.
+  // Poll while the page is actually visible (SPEC14 FR-S3 — a hidden
+  // settings window runs zero timers); each tick re-verifies only the
+  // displayed step's facts (FR-S4). Step navigation and re-show do one full
+  // refresh so review chips stay truthful.
   useEffect(() => {
-    if (!step || step === "try") return;
+    if (!step || step === "try" || !pageVisible) return;
+    refreshSnapshot();
+    const facts = factsForStep(step);
     const interval = setInterval(
-      refreshSnapshot,
+      () => refreshSnapshot(facts),
       step === "menubar" ? TRAY_POLL_MS : POLL_MS,
     );
     return () => clearInterval(interval);
-  }, [step, refreshSnapshot]);
+  }, [step, pageVisible, refreshSnapshot]);
 
   // capture-ready event refreshes immediately (no waiting for the next tick).
   useEffect(() => {

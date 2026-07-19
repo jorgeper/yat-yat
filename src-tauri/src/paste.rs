@@ -7,8 +7,14 @@ use anyhow::{Context, Result};
 use enigo::{Direction, Enigo, Key, Keyboard};
 use std::time::Duration;
 
-/// Milliseconds to let the clipboard settle before the paste keystroke.
-const PRE_PASTE_DELAY_MS: u64 = 50;
+/// Milliseconds to let the clipboard settle before the paste keystroke
+/// (SPEC14 FR-D2: arboard's NSPasteboard write is synchronous — 20 ms is
+/// margin, not a wait for the write itself).
+const PRE_PASTE_DELAY_MS: u64 = 20;
+/// Milliseconds to hold the paste modifier after the V click (SPEC14 FR-D2:
+/// the target registered ⌘V at the V key-down; this hold only covers apps
+/// that sample modifier state late).
+const PASTE_MODIFIER_HOLD_MS: u64 = 20;
 /// SPEC FR-3.1: restore the previous clipboard ~300 ms after the paste.
 const RESTORE_DELAY_MS: u64 = 300;
 
@@ -117,7 +123,7 @@ fn send_paste_keystroke(enigo: &mut Enigo) -> Result<()> {
         .key(modifier, Direction::Press)
         .context("pressing paste modifier")?;
     enigo.key(v_key, Direction::Click).context("pressing V")?;
-    std::thread::sleep(Duration::from_millis(100));
+    std::thread::sleep(Duration::from_millis(PASTE_MODIFIER_HOLD_MS));
     enigo
         .key(modifier, Direction::Release)
         .context("releasing paste modifier")?;

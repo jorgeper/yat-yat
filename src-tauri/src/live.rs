@@ -73,8 +73,15 @@ impl CaptureBuffer {
         std::mem::take(&mut self.samples)
     }
 
+    /// Reset AND release the allocation (SPEC14 FR-A3, R25): a cancelled
+    /// 5-minute recording must not leave tens of MB resident in the worker.
     pub fn clear(&mut self) {
-        self.samples.clear();
+        self.samples = Vec::new();
+    }
+
+    /// Retained allocation, for the R25 release guarantee.
+    pub fn capacity(&self) -> usize {
+        self.samples.capacity()
     }
 
     pub fn len(&self) -> usize {
@@ -127,6 +134,24 @@ mod tests {
         let mut interval = LiveInterval::default();
         interval.on_pass(Duration::from_millis(450)); // between 30% and 60%
         assert_eq!(interval.current(), Duration::from_millis(1000));
+    }
+
+    // R25: clear (the Cancel path) releases the buffer's allocation — a
+    // cancelled long recording must not pin memory until the next stop.
+    #[test]
+    fn r25_clear_releases_capacity_take_still_drains() {
+        let mut buffer = CaptureBuffer::default();
+        buffer.push_chunk(&vec![0.1f32; 1_000_000]);
+        assert!(buffer.capacity() >= 1_000_000);
+        buffer.clear();
+        assert!(buffer.is_empty());
+        assert_eq!(buffer.capacity(), 0, "clear must release the allocation");
+
+        // take() (the stop path) frees by moving the Vec out — unchanged.
+        buffer.push_chunk(&vec![0.2f32; 500_000]);
+        let taken = buffer.take();
+        assert_eq!(taken.len(), 500_000);
+        assert_eq!(buffer.capacity(), 0, "take leaves no retained allocation");
     }
 
     // R10: snapshots never disturb capture — snapshot twice, second is longer.

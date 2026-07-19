@@ -88,6 +88,18 @@ export interface CaptureEvent {
 export const TRANSCRIBE_PROGRESS_EVENT = "transcribe-progress";
 export type TranscribeProgress = number;
 
+// Mirrors overlay.rs::ShowPayload. SPEC14 FR-R5: easter_eggs rides the show
+// payload so the overlay never round-trips get_settings on a recording start.
+export interface ShowOverlayPayload {
+  state: string;
+  live?: boolean;
+  effect?: string;
+  theme?: string;
+  easter_eggs?: boolean;
+  from_app?: string;
+  to_app?: string;
+}
+
 // SPEC11 §1: one item the uninstall would remove.
 export interface UninstallPlanItem {
   path: string;

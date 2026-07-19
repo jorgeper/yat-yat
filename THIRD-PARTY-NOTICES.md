@@ -59,6 +59,8 @@ ggml conversions). See docs/license.md.
 | atomic-waker | 1.1.2 | Apache-2.0 OR MIT |
 | auto-launch | 0.5.0 | MIT |
 | autocfg | 1.5.1 | Apache-2.0 OR MIT |
+| aws-lc-rs | 1.17.3 | ISC AND (Apache-2.0 OR ISC) |
+| aws-lc-sys | 0.43.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) |
 | base64 | 0.21.7 | MIT OR Apache-2.0 |
 | base64 | 0.22.1 | MIT OR Apache-2.0 |
 | base64ct | 1.8.3 | Apache-2.0 OR MIT |
@@ -92,6 +94,7 @@ ggml conversions). See docs/license.md.
 | cfg_aliases | 0.2.1 | MIT |
 | cfg-expr | 0.15.8 | MIT OR Apache-2.0 |
 | cfg-if | 1.0.4 | MIT OR Apache-2.0 |
+| chacha20 | 0.10.1 | MIT OR Apache-2.0 |
 | chrono | 0.4.45 | MIT OR Apache-2.0 |
 | clang-sys | 1.8.1 | Apache-2.0 |
 | clap | 4.6.1 | MIT OR Apache-2.0 |
@@ -112,6 +115,7 @@ ggml conversions). See docs/license.md.
 | coreaudio-rs | 0.13.0 | MIT/Apache-2.0 |
 | cpal | 0.16.0 | Apache-2.0 |
 | cpufeatures | 0.2.17 | MIT OR Apache-2.0 |
+| cpufeatures | 0.3.0 | MIT OR Apache-2.0 |
 | crc32fast | 1.5.0 | MIT OR Apache-2.0 |
 | crossbeam-channel | 0.5.16 | MIT OR Apache-2.0 |
 | crossbeam-utils | 0.8.22 | MIT OR Apache-2.0 |
@@ -142,10 +146,8 @@ ggml conversions). See docs/license.md.
 | derive_more-impl | 2.1.1 | MIT |
 | digest | 0.10.7 | MIT OR Apache-2.0 |
 | dirs | 4.0.0 | MIT OR Apache-2.0 |
-| dirs | 5.0.1 | MIT OR Apache-2.0 |
 | dirs | 6.0.0 | MIT OR Apache-2.0 |
 | dirs-sys | 0.3.7 | MIT OR Apache-2.0 |
-| dirs-sys | 0.4.1 | MIT OR Apache-2.0 |
 | dirs-sys | 0.5.0 | MIT OR Apache-2.0 |
 | dispatch2 | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
 | displaydoc | 0.2.6 | MIT OR Apache-2.0 |
@@ -162,7 +164,6 @@ ggml conversions). See docs/license.md.
 | either | 1.16.0 | MIT OR Apache-2.0 |
 | embed_plist | 1.2.2 | MIT OR Apache-2.0 |
 | embed-resource | 3.0.11 | MIT |
-| encoding_rs | 0.8.35 | (Apache-2.0 OR MIT) AND BSD-3-Clause |
 | endi | 1.1.1 | MIT |
 | enigo | 0.6.1 | MIT |
 | enumflags2 | 0.7.12 | MIT OR Apache-2.0 |
@@ -225,7 +226,6 @@ ggml conversions). See docs/license.md.
 | gtk | 0.18.2 | MIT |
 | gtk-sys | 0.18.2 | MIT |
 | gtk3-macros | 0.18.2 | MIT |
-| h2 | 0.4.15 | MIT |
 | half | 2.7.1 | MIT OR Apache-2.0 |
 | handy-keys | 0.3.0 | MIT |
 | hashbrown | 0.12.3 | MIT OR Apache-2.0 |
@@ -244,7 +244,6 @@ ggml conversions). See docs/license.md.
 | humantime | 2.4.0 | MIT OR Apache-2.0 |
 | hyper | 1.10.1 | MIT |
 | hyper-rustls | 0.27.9 | Apache-2.0 OR ISC OR MIT |
-| hyper-tls | 0.6.0 | MIT/Apache-2.0 |
 | hyper-util | 0.1.20 | MIT |
 | iana-time-zone | 0.1.65 | MIT OR Apache-2.0 |
 | iana-time-zone-haiku | 0.1.2 | MIT OR Apache-2.0 |
@@ -280,6 +279,7 @@ ggml conversions). See docs/license.md.
 | jni-sys | 0.3.1 | MIT OR Apache-2.0 |
 | jni-sys | 0.4.1 | MIT OR Apache-2.0 |
 | jni-sys-macros | 0.4.1 | MIT OR Apache-2.0 |
+| jobserver | 0.1.35 | MIT OR Apache-2.0 |
 | js-sys | 0.3.103 | MIT OR Apache-2.0 |
 | json-patch | 3.0.1 | MIT/Apache-2.0 |
 | jsonptr | 0.6.3 | MIT OR Apache-2.0 |
@@ -295,6 +295,7 @@ ggml conversions). See docs/license.md.
 | litemap | 0.8.2 | Unicode-3.0 |
 | lock_api | 0.4.14 | MIT OR Apache-2.0 |
 | log | 0.4.33 | MIT OR Apache-2.0 |
+| lru-slab | 0.1.2 | MIT OR Apache-2.0 OR Zlib |
 | lzma-rust2 | 0.15.8 | Apache-2.0 |
 | mac-notification-sys | 0.6.15 | MIT/Apache-2.0 |
 | mach2 | 0.4.3 | BSD-2-Clause OR MIT OR Apache-2.0 |
@@ -400,13 +401,19 @@ ggml conversions). See docs/license.md.
 | pxfm | 0.1.30 | BSD-3-Clause OR Apache-2.0 |
 | quick-error | 2.0.1 | MIT/Apache-2.0 |
 | quick-xml | 0.41.0 | MIT |
+| quinn | 0.11.11 | MIT OR Apache-2.0 |
+| quinn-proto | 0.11.16 | MIT OR Apache-2.0 |
+| quinn-udp | 0.5.15 | MIT OR Apache-2.0 |
 | quote | 1.0.46 | MIT OR Apache-2.0 |
 | r-efi | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | r-efi | 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | radium | 0.7.0 | MIT |
+| rand | 0.10.2 | MIT OR Apache-2.0 |
 | rand | 0.9.4 | MIT OR Apache-2.0 |
 | rand_chacha | 0.9.0 | MIT OR Apache-2.0 |
+| rand_core | 0.10.1 | MIT OR Apache-2.0 |
 | rand_core | 0.9.5 | MIT OR Apache-2.0 |
+| rand_pcg | 0.10.2 | MIT OR Apache-2.0 |
 | raw-window-handle | 0.6.2 | MIT OR Apache-2.0 OR Zlib |
 | rawpointer | 0.2.1 | MIT/Apache-2.0 |
 | realfft | 3.5.0 | MIT |
@@ -418,7 +425,6 @@ ggml conversions). See docs/license.md.
 | regex | 1.13.0 | MIT OR Apache-2.0 |
 | regex-automata | 0.4.15 | MIT OR Apache-2.0 |
 | regex-syntax | 0.8.11 | MIT OR Apache-2.0 |
-| reqwest | 0.12.28 | MIT OR Apache-2.0 |
 | reqwest | 0.13.4 | MIT OR Apache-2.0 |
 | ring | 0.17.14 | Apache-2.0 AND ISC |
 | rubato | 0.16.2 | MIT |
@@ -433,7 +439,6 @@ ggml conversions). See docs/license.md.
 | rustls-platform-verifier-android | 0.1.1 | MIT OR Apache-2.0 |
 | rustls-webpki | 0.103.13 | ISC |
 | rustversion | 1.0.23 | MIT OR Apache-2.0 |
-| ryu | 1.0.23 | Apache-2.0 OR BSL-1.0 |
 | same-file | 1.0.6 | Unlicense/MIT |
 | schannel | 0.1.29 | MIT |
 | schemars | 0.8.22 | MIT |
@@ -453,7 +458,6 @@ ggml conversions). See docs/license.md.
 | serde_repr | 0.1.20 | MIT OR Apache-2.0 |
 | serde_spanned | 0.6.9 | MIT OR Apache-2.0 |
 | serde_spanned | 1.1.1 | MIT OR Apache-2.0 |
-| serde_urlencoded | 0.7.1 | MIT/Apache-2.0 |
 | serde_with | 3.21.0 | MIT OR Apache-2.0 |
 | serde_with_macros | 3.21.0 | MIT OR Apache-2.0 |
 | serde-untagged | 0.1.9 | MIT OR Apache-2.0 |
@@ -486,8 +490,6 @@ ggml conversions). See docs/license.md.
 | syn | 2.0.118 | MIT OR Apache-2.0 |
 | sync_wrapper | 1.0.2 | Apache-2.0 |
 | synstructure | 0.13.2 | MIT |
-| system-configuration | 0.7.0 | MIT OR Apache-2.0 |
-| system-configuration-sys | 0.6.0 | MIT OR Apache-2.0 |
 | system-deps | 6.2.2 | MIT OR Apache-2.0 |
 | tao | 0.35.3 | Apache-2.0 |
 | tao-macros | 0.1.3 | MIT OR Apache-2.0 |
@@ -527,7 +529,6 @@ ggml conversions). See docs/license.md.
 | tinyvec_macros | 0.1.1 | MIT OR Apache-2.0 OR Zlib |
 | tokio | 1.52.3 | MIT |
 | tokio-macros | 2.7.0 | MIT |
-| tokio-native-tls | 0.3.1 | MIT |
 | tokio-rustls | 0.26.4 | MIT OR Apache-2.0 |
 | tokio-util | 0.7.18 | MIT |
 | toml | 0.8.2 | MIT OR Apache-2.0 |
@@ -585,10 +586,10 @@ ggml conversions). See docs/license.md.
 | wasm-bindgen-macro | 0.2.126 | MIT OR Apache-2.0 |
 | wasm-bindgen-macro-support | 0.2.126 | MIT OR Apache-2.0 |
 | wasm-bindgen-shared | 0.2.126 | MIT OR Apache-2.0 |
-| wasm-streams | 0.4.2 | MIT OR Apache-2.0 |
 | wasm-streams | 0.5.0 | MIT OR Apache-2.0 |
 | web_atoms | 0.2.5 | MIT OR Apache-2.0 |
 | web-sys | 0.3.103 | MIT OR Apache-2.0 |
+| web-time | 1.1.0 | MIT OR Apache-2.0 |
 | webkit2gtk | 2.0.2 | MIT |
 | webkit2gtk-sys | 2.0.2 | MIT |
 | webpki-root-certs | 1.0.8 | CDLA-Permissive-2.0 |
@@ -607,33 +608,26 @@ ggml conversions). See docs/license.md.
 | windows | 0.58.0 | MIT OR Apache-2.0 |
 | windows | 0.61.3 | MIT OR Apache-2.0 |
 | windows_aarch64_gnullvm | 0.42.2 | MIT OR Apache-2.0 |
-| windows_aarch64_gnullvm | 0.48.5 | MIT OR Apache-2.0 |
 | windows_aarch64_gnullvm | 0.52.6 | MIT OR Apache-2.0 |
 | windows_aarch64_gnullvm | 0.53.1 | MIT OR Apache-2.0 |
 | windows_aarch64_msvc | 0.42.2 | MIT OR Apache-2.0 |
-| windows_aarch64_msvc | 0.48.5 | MIT OR Apache-2.0 |
 | windows_aarch64_msvc | 0.52.6 | MIT OR Apache-2.0 |
 | windows_aarch64_msvc | 0.53.1 | MIT OR Apache-2.0 |
 | windows_i686_gnu | 0.42.2 | MIT OR Apache-2.0 |
-| windows_i686_gnu | 0.48.5 | MIT OR Apache-2.0 |
 | windows_i686_gnu | 0.52.6 | MIT OR Apache-2.0 |
 | windows_i686_gnu | 0.53.1 | MIT OR Apache-2.0 |
 | windows_i686_gnullvm | 0.52.6 | MIT OR Apache-2.0 |
 | windows_i686_gnullvm | 0.53.1 | MIT OR Apache-2.0 |
 | windows_i686_msvc | 0.42.2 | MIT OR Apache-2.0 |
-| windows_i686_msvc | 0.48.5 | MIT OR Apache-2.0 |
 | windows_i686_msvc | 0.52.6 | MIT OR Apache-2.0 |
 | windows_i686_msvc | 0.53.1 | MIT OR Apache-2.0 |
 | windows_x86_64_gnu | 0.42.2 | MIT OR Apache-2.0 |
-| windows_x86_64_gnu | 0.48.5 | MIT OR Apache-2.0 |
 | windows_x86_64_gnu | 0.52.6 | MIT OR Apache-2.0 |
 | windows_x86_64_gnu | 0.53.1 | MIT OR Apache-2.0 |
 | windows_x86_64_gnullvm | 0.42.2 | MIT OR Apache-2.0 |
-| windows_x86_64_gnullvm | 0.48.5 | MIT OR Apache-2.0 |
 | windows_x86_64_gnullvm | 0.52.6 | MIT OR Apache-2.0 |
 | windows_x86_64_gnullvm | 0.53.1 | MIT OR Apache-2.0 |
 | windows_x86_64_msvc | 0.42.2 | MIT OR Apache-2.0 |
-| windows_x86_64_msvc | 0.48.5 | MIT OR Apache-2.0 |
 | windows_x86_64_msvc | 0.52.6 | MIT OR Apache-2.0 |
 | windows_x86_64_msvc | 0.53.1 | MIT OR Apache-2.0 |
 | windows-collections | 0.2.0 | MIT OR Apache-2.0 |
@@ -649,7 +643,6 @@ ggml conversions). See docs/license.md.
 | windows-link | 0.1.3 | MIT OR Apache-2.0 |
 | windows-link | 0.2.1 | MIT OR Apache-2.0 |
 | windows-numerics | 0.2.0 | MIT OR Apache-2.0 |
-| windows-registry | 0.6.1 | MIT OR Apache-2.0 |
 | windows-result | 0.1.2 | MIT OR Apache-2.0 |
 | windows-result | 0.2.0 | MIT OR Apache-2.0 |
 | windows-result | 0.3.4 | MIT OR Apache-2.0 |
@@ -658,13 +651,11 @@ ggml conversions). See docs/license.md.
 | windows-strings | 0.4.2 | MIT OR Apache-2.0 |
 | windows-strings | 0.5.1 | MIT OR Apache-2.0 |
 | windows-sys | 0.45.0 | MIT OR Apache-2.0 |
-| windows-sys | 0.48.0 | MIT OR Apache-2.0 |
 | windows-sys | 0.52.0 | MIT OR Apache-2.0 |
 | windows-sys | 0.59.0 | MIT OR Apache-2.0 |
 | windows-sys | 0.60.2 | MIT OR Apache-2.0 |
 | windows-sys | 0.61.2 | MIT OR Apache-2.0 |
 | windows-targets | 0.42.2 | MIT OR Apache-2.0 |
-| windows-targets | 0.48.5 | MIT OR Apache-2.0 |
 | windows-targets | 0.52.6 | MIT OR Apache-2.0 |
 | windows-targets | 0.53.5 | MIT OR Apache-2.0 |
 | windows-threading | 0.1.0 | MIT OR Apache-2.0 |

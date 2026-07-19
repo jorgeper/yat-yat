@@ -1,6 +1,7 @@
 // mirror-wave: symmetric bars breathing outward from the midline.
 
 import type { EffectFrame, EffectRenderer } from "./types";
+import { levelAt } from "./types";
 
 const BAR_W = 3;
 const GAP = 2;
@@ -11,11 +12,9 @@ export function createMirrorWave(): EffectRenderer {
     dispose() {},
     render(ctx, frame: EffectFrame) {
       const count = Math.floor(frame.width / (BAR_W + GAP));
-      const recent = frame.levels.slice(-count);
-      const pad = count - recent.length;
       const mid = frame.height / 2;
       for (let i = 0; i < count; i++) {
-        const level = i < pad ? 0 : recent[i - pad];
+        const level = levelAt(frame.levels, count, i);
         const wobble = frame.reducedMotion ? 0 : Math.sin(frame.time * 3 + i * 0.4) * 0.08;
         const h = Math.max(1.5, (level + wobble * level) * mid * 0.92);
         const x = i * (BAR_W + GAP);

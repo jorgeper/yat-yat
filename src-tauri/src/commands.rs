@@ -150,7 +150,7 @@ pub fn delete_model(app: AppHandle, state: State<AppState>, model_id: String) ->
 }
 
 #[tauri::command]
-pub fn set_active_model(state: State<AppState>, model_id: String) -> CmdResult<()> {
+pub fn set_active_model(app: AppHandle, state: State<AppState>, model_id: String) -> CmdResult<()> {
     let entry = state
         .registry
         .get(&model_id)
@@ -163,7 +163,19 @@ pub fn set_active_model(state: State<AppState>, model_id: String) -> CmdResult<(
         settings.active_model = Some(model_id);
         settings.save(&state.settings_path()).map_err(err)?;
     }
-    state.unload_engine(); // next dictation loads the new model warm
+    state.unload_engine();
+    // Pre-warm the new model on a background thread (SPEC14 FR-W2b) so the
+    // multi-second load happens now, not on the next dictation's stop path.
+    std::thread::Builder::new()
+        .name("engine-prewarm".into())
+        .spawn(move || {
+            use tauri::Manager;
+            let state = app.state::<AppState>();
+            if let Err(e) = state.ensure_loaded(&app) {
+                log::warn!("model-switch pre-warm failed (next dictation retries): {e}");
+            }
+        })
+        .ok();
     Ok(())
 }
 
@@ -179,6 +191,9 @@ pub fn clear_history(app: AppHandle, state: State<AppState>) -> CmdResult<()> {
         history.clear();
         history.save(&state.history_path()).map_err(err)?;
     }
+    // Join any in-flight retained-WAV write first (SPEC14 FR-D3) — deleting
+    // under a concurrent writer would leave the file resurrected.
+    state.await_wav_write();
     let audio = crate::history::last_audio_path(&state.data_dir);
     if audio.exists() {
         std::fs::remove_file(audio).map_err(err)?;

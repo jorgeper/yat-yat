@@ -30,15 +30,26 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 pub const SETTINGS_LABEL: &str = "settings";
 
 /// Show (creating if needed) the settings window, optionally deep-linking to a
-/// section ("models" for the no-model flow).
+/// section ("models" for the no-model flow). Since SPEC14 FR-S2 the window is
+/// created lazily on first use — a normal tray-only launch never pays for the
+/// second WKWebView. For a just-created window the deep link rides the URL
+/// query (an emit would race the webview's listener registration); for an
+/// existing window the event path works as always.
 pub fn show_settings_window(app: &AppHandle, section: Option<&str>) {
     use tauri::Emitter;
     if let Some(window) = app.get_webview_window(SETTINGS_LABEL) {
         let _ = window.show();
         let _ = window.set_focus();
+        if let Some(section) = section {
+            let _ = app.emit_to(SETTINGS_LABEL, "navigate-section", section);
+        }
+        return;
     }
-    if let Some(section) = section {
-        let _ = app.emit_to(SETTINGS_LABEL, "navigate-section", section);
+    let query = section.map(|s| format!("section={s}"));
+    if create_settings_window(app, true, query.as_deref()).is_ok() {
+        if let Some(window) = app.get_webview_window(SETTINGS_LABEL) {
+            let _ = window.set_focus();
+        }
     }
 }
 
@@ -128,11 +139,20 @@ fn dock_tile_nudge(app: &AppHandle, hand_back: bool) {
 }
 
 /// SPEC9 FR-U1: both menu surfaces route here — show the settings window
-/// and hand off to its Check for Updates dialog.
+/// and hand off to its Check for Updates dialog. Same lazy-creation rule as
+/// show_settings_window: a fresh window gets the intent via URL query.
 pub fn open_update_check(app: &AppHandle) {
     use tauri::Emitter;
-    show_settings_window(app, None);
-    let _ = app.emit_to(SETTINGS_LABEL, "check-updates", ());
+    if app.get_webview_window(SETTINGS_LABEL).is_some() {
+        show_settings_window(app, None);
+        let _ = app.emit_to(SETTINGS_LABEL, "check-updates", ());
+        return;
+    }
+    if create_settings_window(app, true, Some("updates=1")).is_ok() {
+        if let Some(window) = app.get_webview_window(SETTINGS_LABEL) {
+            let _ = window.set_focus();
+        }
+    }
 }
 
 /// The macOS application menu (top-left of the menu bar while a Yat Yat
@@ -192,8 +212,12 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
     Menu::with_items(app, &[&app_menu, &edit, &window])
 }
 
-fn create_settings_window(app: &AppHandle, visible: bool) -> tauri::Result<()> {
-    WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App("index.html".into()))
+fn create_settings_window(app: &AppHandle, visible: bool, query: Option<&str>) -> tauri::Result<()> {
+    let url = match query {
+        Some(q) => format!("index.html?{q}"),
+        None => "index.html".to_string(),
+    };
+    WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App(url.into()))
         .title("Yat Yat")
         .inner_size(780.0, 560.0)
         .min_inner_size(680.0, 480.0)
@@ -311,9 +335,15 @@ pub fn run() {
                 data_dir, settings, registry, history, recorder, pipeline,
             ));
 
-            overlay::create(&handle)?;
-            create_settings_window(&handle, onboarding_needed)?;
+            // SPEC14 FR-S1/FR-S2: the tray icon — the only visible launch
+            // signal — paints before any webview is constructed; the settings
+            // webview is only built here on first run (the wizard). Every
+            // other launch creates it lazily in show_settings_window.
             tray::create(&handle)?;
+            overlay::create(&handle)?;
+            if onboarding_needed {
+                create_settings_window(&handle, true, None)?;
+            }
 
             // Application menu with Settings… (⌘,). Tray menu ids are
             // disjoint, so this global handler ignores tray events.
@@ -338,10 +368,10 @@ pub fn run() {
                 }
             }
 
-            // Start capture now if permissions already allow it (non-mac, or
-            // Accessibility granted in a previous run); on macOS keep watching
-            // so a mid-session grant activates the hotkey without a relaunch.
-            let _ = init_capture(&handle);
+            // Capture init moved to RunEvent::Ready (SPEC14 FR-S6) — it does
+            // a synchronous handshake with the hotkey manager thread and
+            // constructs Enigo, none of which needs to gate the launch. The
+            // capture watcher below covers the retry path regardless.
             #[cfg(target_os = "macos")]
             spawn_capture_watcher(handle.clone());
 
@@ -386,6 +416,31 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building yat-yat")
         .run(|_app, _event| {
+            if let tauri::RunEvent::Ready = &_event {
+                // Capture init off the setup path (SPEC14 FR-S6): a synchronous
+                // hotkey-manager handshake + Enigo construction the launch
+                // never needed to wait for. The 3 s watcher is the retry net.
+                let _ = init_capture(_app);
+                // SPEC14 FR-W2a: pre-warm the STT engine in the background so
+                // the first dictation's stop path never pays the multi-second
+                // cold load. Never on the main/pipeline thread.
+                let handle = _app.clone();
+                std::thread::Builder::new()
+                    .name("engine-prewarm".into())
+                    .spawn(move || {
+                        let state = handle.state::<AppState>();
+                        if state.active_model_ready() && state.engine_needs_warm() {
+                            if let Err(e) = state.ensure_loaded(&handle) {
+                                log::warn!("startup pre-warm failed (first dictation retries): {e}");
+                            }
+                        }
+                    })
+                    .ok();
+            }
+            if let tauri::RunEvent::Exit = &_event {
+                // Persist any un-flushed RTF observations (SPEC14 FR-D5).
+                _app.state::<AppState>().flush_rtf();
+            }
             #[cfg(target_os = "macos")]
             {
                 if let tauri::RunEvent::Ready = &_event {

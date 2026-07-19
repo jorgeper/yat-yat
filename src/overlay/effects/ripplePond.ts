@@ -1,7 +1,7 @@
 // ripple-pond: raindrop ripples land across the pond when you speak.
 
 import type { EffectFrame, EffectRenderer } from "./types";
-import { mulberry } from "./types";
+import { compactInPlace, mulberry } from "./types";
 
 interface Ripple {
   x: number;
@@ -12,15 +12,15 @@ interface Ripple {
 
 export function createRipplePond(): EffectRenderer {
   const rand = mulberry(7);
-  let ripples: Ripple[] = [];
+  const ripples: Ripple[] = [];
   let cooldown = 0;
   return {
     init() {
-      ripples = [];
+      ripples.length = 0;
       cooldown = 0;
     },
     dispose() {
-      ripples = [];
+      ripples.length = 0;
     },
     render(ctx, frame: EffectFrame) {
       cooldown -= frame.dt;
@@ -43,7 +43,7 @@ export function createRipplePond(): EffectRenderer {
       ctx.lineTo(frame.width, frame.height / 2);
       ctx.stroke();
 
-      ripples = ripples.filter((r) => r.life > 0);
+      compactInPlace(ripples, (r) => r.life > 0);
       for (const ripple of ripples) {
         ripple.r += (18 + frame.level * 50) * frame.dt;
         ripple.life -= frame.dt / 1.6;

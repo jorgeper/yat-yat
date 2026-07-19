@@ -232,6 +232,26 @@ fn start_recording(app: &AppHandle, generation: &mut u64, tx: &mpsc::Sender<Msg>
         let _ = app.emit("pipeline-error", format!("Could not start recording: {e}"));
         return false;
     }
+    state
+        .stop_pending
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+
+    // Belt-and-braces pre-warm (SPEC14 FR-W2c): if startup/model-switch
+    // warming didn't happen (or the engine was unloaded), start the load NOW
+    // on a background thread so it overlaps the recording instead of landing
+    // on the stop path. try_lock probe — never blocks this thread.
+    if state.engine_needs_warm() {
+        let app_warm = app.clone();
+        std::thread::Builder::new()
+            .name("engine-prewarm".into())
+            .spawn(move || {
+                let state = app_warm.state::<AppState>();
+                if let Err(e) = state.ensure_loaded(&app_warm) {
+                    log::warn!("engine pre-warm failed (stop path will retry): {e}");
+                }
+            })
+            .ok();
+    }
 
     crate::sounds::play(app, crate::sounds::Cue::Start);
 
@@ -299,6 +319,12 @@ fn live_loop(app: AppHandle) {
         if samples.len() < crate::audio::TARGET_RATE as usize {
             continue;
         }
+        // SPEC14 FR-A2: the user already released the hotkey — starting a
+        // whole-buffer pass now would make the authoritative stop transcription
+        // queue behind it on the engine mutex.
+        if state.stop_pending.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
         let t0 = Instant::now();
         match state.transcribe(&app, &samples) {
             Ok(text) => {
@@ -323,12 +349,21 @@ fn live_loop(app: AppHandle) {
 fn finish_recording(app: &AppHandle, generation: u64, tx: &mpsc::Sender<Msg>) -> Stage {
     let t0 = Instant::now();
     let state = app.state::<AppState>();
+    // FIRST: tell any in-flight live loop the stop path owns the engine now
+    // (SPEC14 FR-A2) — before the recorder stops, so a pass that was about to
+    // start skips instead of queueing a whole-buffer transcription ahead of us.
+    state
+        .stop_pending
+        .store(true, std::sync::atomic::Ordering::SeqCst);
     state.hotkeys_set_cancel(false);
     overlay::show_state(app, overlay::state::TRANSCRIBING);
     tray::set_state(app, tray::TrayState::Processing);
 
     let done = |app: &AppHandle| {
         tray::set_state(app, tray::TrayState::Idle);
+        // Return-to-idle: persist any RTF observations from this dictation
+        // (SPEC14 FR-D5 — one write per dictation, not one per live pass).
+        app.state::<AppState>().flush_rtf();
     };
 
     let samples = match state.recorder.stop() {
@@ -346,12 +381,23 @@ fn finish_recording(app: &AppHandle, generation: u64, tx: &mpsc::Sender<Msg>) ->
         return Stage::Idle;
     }
 
-    // Retain audio for Retry (FR-5) unless history is disabled.
+    // Retain audio for Retry (FR-5) unless history is disabled. The write
+    // happens on a background thread (SPEC14 FR-D3) so STT starts
+    // immediately; Retry joins the handle before reading — never a partial
+    // file. 16-bit PCM halves the file; read_wav_16k_mono handles Int.
     let keep_history = state.settings.read().unwrap().keep_history;
     if keep_history {
         let path = crate::history::last_audio_path(&state.data_dir);
-        if let Err(e) = audio::write_wav_16k_mono(&path, &samples) {
-            log::warn!("could not retain last recording: {e}");
+        let wav_samples = samples.clone();
+        if let Ok(handle) = std::thread::Builder::new()
+            .name("retain-wav".into())
+            .spawn(move || {
+                if let Err(e) = audio::write_wav_16k_mono_pcm16(&path, &wav_samples) {
+                    log::warn!("could not retain last recording: {e}");
+                }
+            })
+        {
+            state.spawn_wav_write(handle);
         }
     }
 
@@ -503,8 +549,11 @@ fn transcribe_and_clean(app: &AppHandle, samples: &[f32]) -> anyhow::Result<Stri
     }
 }
 
-/// History + last transcription (FR-5) — runs before any delivery decision
-/// so every focus-guard outcome keeps the text (SPEC7 FR-G4).
+/// History + last transcription (FR-5) — the in-memory record runs before any
+/// delivery decision so every focus-guard outcome keeps the text (SPEC7
+/// FR-G4). Persistence and UI refreshes (history.json write, history-changed
+/// emit, tray menu rebuild) are deferred to a background thread (SPEC14
+/// FR-D4) — they were pure overhead between STT completing and the paste.
 fn record_transcription(app: &AppHandle, text: &str) {
     let state = app.state::<AppState>();
     *state.last_transcription.lock().unwrap() = Some(text.to_string());
@@ -519,10 +568,22 @@ fn record_transcription(app: &AppHandle, text: &str) {
             timestamp: chrono::Utc::now(),
             model_id: model_id.unwrap_or_default(),
         });
-        let _ = history.save(&state.history_path());
     }
-    let _ = app.emit("history-changed", ());
-    tray::refresh_menu(app, tray::TrayState::Idle);
+    let app_bg = app.clone();
+    std::thread::Builder::new()
+        .name("record-persist".into())
+        .spawn(move || {
+            let state = app_bg.state::<AppState>();
+            if keep_history {
+                // The push above happened under this same lock before the
+                // spawn — the save always sees it.
+                let history = state.history.lock().unwrap();
+                let _ = history.save(&state.history_path());
+            }
+            let _ = app_bg.emit("history-changed", ());
+            tray::refresh_menu(&app_bg, tray::TrayState::Idle);
+        })
+        .ok();
 }
 
 /// Paste (or copy) the final text on the main thread.
@@ -580,6 +641,9 @@ fn retry_last(app: &AppHandle) {
         overlay::show_state(app, overlay::state::NO_MODEL);
         return;
     }
+    // Never read a partially written file: the retained WAV is written on a
+    // background thread since SPEC14 FR-D3 — join it first.
+    state.await_wav_write();
     let path = crate::history::last_audio_path(&state.data_dir);
     if !path.exists() {
         notify(app, "Nothing to retry", "No previous recording is available.");

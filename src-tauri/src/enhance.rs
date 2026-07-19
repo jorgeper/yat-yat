@@ -4,9 +4,19 @@
 use crate::settings::{validate_enhancement_endpoint, EnhancementSettings};
 use anyhow::{bail, Context, Result};
 use serde_json::json;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 pub const ENHANCE_TIMEOUT: Duration = Duration::from_secs(5);
+const WARMUP_TIMEOUT: Duration = Duration::from_millis(1500);
+
+/// One shared client for warmup + enhance (SPEC14 FR-D6): the warmup's
+/// kept-alive localhost connection then serves the enhance call on the stop
+/// path. Timeouts are per-request, not per-client.
+fn client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
 
 fn chat_url(endpoint: &str) -> String {
     format!("{}/api/chat", endpoint.trim_end_matches('/'))
@@ -16,9 +26,6 @@ fn chat_url(endpoint: &str) -> String {
 /// signal to fall back to the filtered text (SPEC: "enhancement skipped").
 pub async fn enhance(text: &str, cfg: &EnhancementSettings) -> Result<String> {
     validate_enhancement_endpoint(&cfg.endpoint)?;
-    let client = reqwest::Client::builder()
-        .timeout(ENHANCE_TIMEOUT)
-        .build()?;
     let body = json!({
         "model": cfg.model,
         "stream": false,
@@ -28,8 +35,9 @@ pub async fn enhance(text: &str, cfg: &EnhancementSettings) -> Result<String> {
             { "role": "user", "content": text },
         ],
     });
-    let response = client
+    let response = client()
         .post(chat_url(&cfg.endpoint))
+        .timeout(ENHANCE_TIMEOUT)
         .json(&body)
         .send()
         .await
@@ -55,16 +63,10 @@ pub async fn warmup(cfg: &EnhancementSettings) {
     if validate_enhancement_endpoint(&cfg.endpoint).is_err() {
         return;
     }
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_millis(1500))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return,
-    };
     // An empty-message chat request loads the model and returns immediately.
-    let _ = client
+    let _ = client()
         .post(chat_url(&cfg.endpoint))
+        .timeout(WARMUP_TIMEOUT)
         .json(&json!({ "model": cfg.model, "messages": [] }))
         .send()
         .await;

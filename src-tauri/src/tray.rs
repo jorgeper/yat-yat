@@ -3,6 +3,7 @@
 
 use crate::state::AppState;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::{Mutex, OnceLock};
 use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Manager};
@@ -18,6 +19,24 @@ pub enum TrayState {
 // tracked here because a wiggle can straddle a state change.
 static LAST_STATE: AtomicU8 = AtomicU8::new(0);
 static WIGGLING: AtomicBool = AtomicBool::new(false);
+/// The state the current tray menu was built for (SPEC14 FR-S5): set_state
+/// skips the rebuild when the menu's contents wouldn't change. 255 = none.
+static MENU_STATE: AtomicU8 = AtomicU8::new(255);
+
+/// State icons decoded once (SPEC14 FR-S5) — set_state ran a disk read + PNG
+/// decode on every transition, three times per dictation, on the pipeline
+/// thread.
+fn state_icon(app: &AppHandle, state: TrayState) -> Option<tauri::image::Image<'static>> {
+    static CACHE: OnceLock<Mutex<std::collections::HashMap<u8, tauri::image::Image<'static>>>> =
+        OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(icon) = cache.lock().unwrap().get(&state.to_u8()) {
+        return Some(icon.clone());
+    }
+    let icon = tauri::image::Image::from_path(icon_path(app, state).ok()?).ok()?;
+    cache.lock().unwrap().insert(state.to_u8(), icon.clone());
+    Some(icon)
+}
 
 impl TrayState {
     fn to_u8(self) -> u8 {
@@ -157,7 +176,9 @@ fn build_menu(app: &AppHandle, state: TrayState) -> anyhow::Result<Menu<tauri::W
 }
 
 pub fn create(app: &AppHandle) -> anyhow::Result<()> {
-    let icon = tauri::image::Image::from_path(icon_path(app, TrayState::Idle)?)?;
+    let icon = state_icon(app, TrayState::Idle)
+        .ok_or_else(|| anyhow::anyhow!("loading idle tray icon"))?;
+    MENU_STATE.store(TrayState::Idle.to_u8(), Ordering::SeqCst);
     let mut builder = TrayIconBuilder::with_id("yat-yat-tray")
         .icon(icon)
         .icon_as_template(true)
@@ -216,20 +237,24 @@ pub fn wiggle(app: &AppHandle) {
 pub fn set_state(app: &AppHandle, state: TrayState) {
     LAST_STATE.store(state.to_u8(), Ordering::SeqCst);
     if let Some(tray) = app.try_state::<TrayIcon>() {
-        if let Ok(path) = icon_path(app, state) {
-            if let Ok(icon) = tauri::image::Image::from_path(path) {
-                let _ = tray.set_icon(Some(icon));
-                // All states are template icons. SPEC7 FR-T1 wanted the
-                // recording dot in color, but macOS 26 wraps the recording
-                // app's status item in the system's orange privacy capsule
-                // and substitutes a generic glyph for non-template icons —
-                // template alpha keeps OUR mic-with-dot rendering inside it
-                // (divergence noted in docs/ARCHITECTURE.md).
-                let _ = tray.set_icon_as_template(true);
-            }
+        if let Some(icon) = state_icon(app, state) {
+            let _ = tray.set_icon(Some(icon));
+            // All states are template icons. SPEC7 FR-T1 wanted the
+            // recording dot in color, but macOS 26 wraps the recording
+            // app's status item in the system's orange privacy capsule
+            // and substitutes a generic glyph for non-template icons —
+            // template alpha keeps OUR mic-with-dot rendering inside it
+            // (divergence noted in docs/ARCHITECTURE.md).
+            let _ = tray.set_icon_as_template(true);
         }
-        if let Ok(menu) = build_menu(app, state) {
-            let _ = tray.set_menu(Some(menu));
+        // The menu's contents only depend on the state (dictate label /
+        // enabled flags) — same state, same menu: skip the AppKit rebuild
+        // (SPEC14 FR-S5). History changes go through refresh_menu, which
+        // always rebuilds.
+        if MENU_STATE.swap(state.to_u8(), Ordering::SeqCst) != state.to_u8() {
+            if let Ok(menu) = build_menu(app, state) {
+                let _ = tray.set_menu(Some(menu));
+            }
         }
     }
 }
@@ -238,6 +263,7 @@ pub fn set_state(app: &AppHandle, state: TrayState) {
 pub fn refresh_menu(app: &AppHandle, state: TrayState) {
     if let Some(tray) = app.try_state::<TrayIcon>() {
         if let Ok(menu) = build_menu(app, state) {
+            MENU_STATE.store(state.to_u8(), Ordering::SeqCst);
             let _ = tray.set_menu(Some(menu));
         }
     }

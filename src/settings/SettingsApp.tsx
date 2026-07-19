@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, listen } from "../ipc/api";
 import type { HistoryEntry, ModelStatus, Settings } from "../ipc/types";
 import type { StepId } from "../lib/onboarding";
+import { usePageVisible } from "../lib/usePageVisible";
 import { updates } from "../ipc/updates";
 import { konamiProgress, KONAMI } from "../lib/eggs";
 import { SECRET_THEME_ID } from "../overlay/secretTheme";
@@ -30,13 +31,24 @@ export default function SettingsApp() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [models, setModels] = useState<ModelStatus[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [section, setSection] = useState<SectionId>("general");
+  // SPEC14 FR-S2: the window is created lazily, so deep links may arrive as
+  // URL query params (an emit into a just-created webview races listener
+  // registration) — ?section=models and ?updates=1 mirror the events.
+  const [section, setSection] = useState<SectionId>(() => {
+    const s = new URLSearchParams(window.location.search).get("section");
+    return SECTIONS.some((x) => x.id === s) ? (s as SectionId) : "general";
+  });
   const [captureDead, setCaptureDead] = useState(false);
+  const pageVisible = usePageVisible();
+  const pageVisibleRef = useRef(pageVisible);
+  pageVisibleRef.current = pageVisible;
   // Session-only intent (SPEC5 §4.3): Re-run setup walks from the top;
   // launch resume and Fix-in-setup open at the frontier.
   const [wizardFromTop, setWizardFromTop] = useState(false);
   // SPEC9: Check for Updates… (native menu / tray) opens the dialog here.
-  const [updateOpen, setUpdateOpen] = useState(false);
+  const [updateOpen, setUpdateOpen] = useState(
+    () => new URLSearchParams(window.location.search).get("updates") === "1",
+  );
   const [appVersion, setAppVersion] = useState("");
   // SPEC11 §5.2: ↑↑↓↓←→←→BA toggles the secret Yat95 theme.
   const [eggToast, setEggToast] = useState<string | null>(null);
@@ -47,9 +59,24 @@ export default function SettingsApp() {
     api.getSettings().then(setSettings).catch(console.error);
   }, []);
 
+  // History refreshes only reach IPC while the page is visible (SPEC14
+  // FR-S3): a history-changed after every dictation was waking the hidden
+  // webview; the stale flag defers the fetch to the next show.
+  const historyStaleRef = useRef(false);
   const refreshHistory = useCallback(() => {
+    if (!pageVisibleRef.current) {
+      historyStaleRef.current = true;
+      return;
+    }
     api.getHistory().then(setHistory).catch(console.error);
   }, []);
+
+  useEffect(() => {
+    if (pageVisible && historyStaleRef.current) {
+      historyStaleRef.current = false;
+      api.getHistory().then(setHistory).catch(console.error);
+    }
+  }, [pageVisible]);
 
   useEffect(() => {
     api.getSettings().then(setSettings).catch(console.error);
@@ -76,12 +103,14 @@ export default function SettingsApp() {
 
   // Capture-dead banner (SPEC4 FR-F2.1): poll while the normal sections are
   // showing; the banner clears itself when the hotkey listener recovers.
+  // Gated on visibility (SPEC14 FR-S3) — re-show runs an immediate check.
   const onboardingActive = settings ? !settings.onboarding_complete : true;
   useEffect(() => {
     if (onboardingActive) {
       setCaptureDead(false);
       return;
     }
+    if (!pageVisible) return;
     let cancelled = false;
     const check = async () => {
       try {
@@ -99,7 +128,7 @@ export default function SettingsApp() {
       cancelled = true;
       clearInterval(poll);
     };
-  }, [onboardingActive]);
+  }, [onboardingActive, pageVisible]);
 
   const save = useCallback(async (next: Settings) => {
     setSettings(next);

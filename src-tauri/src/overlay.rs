@@ -38,6 +38,10 @@ struct ShowPayload {
     live: bool,
     effect: String,
     theme: String,
+    /// SPEC14 FR-R5: the eggs switch rides the show payload — the settings
+    /// lock is already held here, so the overlay no longer round-trips a
+    /// get_settings on every recording start.
+    easter_eggs: bool,
     /// App names for the focus-guard prompt (SPEC7 FR-G3); absent elsewhere.
     #[serde(skip_serializing_if = "Option::is_none")]
     from_app: Option<String>,
@@ -188,11 +192,15 @@ fn show_internal(
         OVERLAY_VISIBLE.store(true, Ordering::SeqCst);
         // Appearance travels with every show so the overlay never renders
         // with stale effect/theme choices (SPEC6 FR-A5).
-        let (effect, theme) = {
+        let (effect, theme, easter_eggs) = {
             use tauri::Manager;
             let state = app.state::<crate::state::AppState>();
             let settings = state.settings.read().unwrap();
-            (settings.overlay_effect.clone(), settings.overlay_theme.clone())
+            (
+                settings.overlay_effect.clone(),
+                settings.overlay_theme.clone(),
+                settings.easter_eggs,
+            )
         };
         let _ = app.emit_to(
             OVERLAY_LABEL,
@@ -202,6 +210,7 @@ fn show_internal(
                 live,
                 effect,
                 theme,
+                easter_eggs,
                 from_app,
                 to_app,
             },

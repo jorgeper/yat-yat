@@ -1,6 +1,7 @@
 // spectrum-blocks: a chunky grid of cells lighting bottom-up with the voice.
 
 import type { EffectFrame, EffectRenderer } from "./types";
+import { levelAt } from "./types";
 
 const COLS = 24;
 const ROWS = 5;
@@ -12,10 +13,8 @@ export function createSpectrumBlocks(): EffectRenderer {
     render(ctx, frame: EffectFrame) {
       const cw = frame.width / COLS;
       const ch = frame.height / ROWS;
-      const recent = frame.levels.slice(-COLS);
-      const pad = COLS - recent.length;
       for (let c = 0; c < COLS; c++) {
-        const level = c < pad ? 0 : recent[c - pad];
+        const level = levelAt(frame.levels, COLS, c);
         const lit = Math.round(level * ROWS);
         for (let r = 0; r < ROWS; r++) {
           const on = r < lit;

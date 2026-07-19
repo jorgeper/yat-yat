@@ -6,12 +6,15 @@
 Right ⌘ (handy-keys event tap)
    └─> pipeline.rs   Idle → Recording → Processing state machine (1 thread, serialized)
          ├─ audio.rs        cpal @ device native rate → mono downmix → RMS levels (~30 Hz)
-         │                  → on stop: rubato resample to 16 kHz mono
+         │                  → incremental rubato resample to 16 kHz AS CHUNKS ARRIVE (SPEC14);
+         │                    stop = adaptive drain (quiet 15 ms, cap 60 ms) + tail flush
          ├─ overlay.rs      non-activating pill (NSPanel), waveform from level events
          ├─ stt.rs          transcribe-rs: Parakeet (ONNX) | Whisper GGUF (whisper.cpp+Metal)
+         │                  engine pre-warmed in the background (SPEC14) — never cold on stop
          ├─ cleanup.rs      pure filter: fillers, [artifacts], repeats, whitespace  ← R1–R4
          ├─ enhance.rs      optional localhost-only Ollama rewrite, 5 s timeout → fallback
-         └─ paste.rs        clipboard save → write → ⌘V (enigo) → restore (~300 ms)
+         └─ paste.rs        clipboard save → write (20 ms settle) → ⌘V (enigo, 20 ms hold)
+                            → deferred restore (~300 ms, off-thread)
 ```
 
 ## Module map
@@ -63,22 +66,39 @@ platform-specific seams, each isolated in one place:
 
 Remaining Windows work is packaging (MSI/NSIS via `tauri build`), not code.
 
-## Measured performance (SPEC §7)
+## Measured performance (SPEC §7, re-measured after SPEC14)
 
-Machine: Apple Silicon Mac (Darwin 25.5), release build, 2026-07-09.
+Machine: Apple Silicon Mac (Darwin 25.5), release build, 2026-07-18.
 
 | Target | Requirement | Measured |
 | --- | --- | --- |
-| Hotkey → overlay visible | < 150 ms | `show_state` → visible: **0.29 ms** (perf probe; the handy-keys event dispatch adds single-digit ms — end-to-end is dominated by nothing) |
-| Stop → text pasted (Whisper tiny) | < 1 s | jfk.wav (11 s audio): inference **97–431 ms** (warm/cold Metal) + cleanup 0.06 ms + paste delays ~450 ms ⇒ **≈ 0.6–0.9 s** |
-| Stop → text pasted (Parakeet v3, 15 s) | < 1.5 s | not measurable in this run — model download blocked by the harness's no-network constraint; see BLOCKERS.md. Published benchmarks put Parakeet ~10× faster than whisper-large-turbo on ANE-class hardware |
-| Idle RSS | < 400 MB warm | app idle: **102 MB**; peak RSS with Whisper tiny loaded + inferring: **228 MB** (CLI, same engine code) |
-| Idle CPU | < 1 % | **0.0 %** (ps, 6 s idle) |
-| Cleanup filter, 1,000 words | < 1 ms | **59.6 µs** per run (bench-clean, 100 runs) |
+| Hotkey → overlay visible | < 150 ms | `show_state` → visible: **0.24–0.61 ms** (perf probe, three runs; tray icons now come from a decode-once cache, so `set_state` on this path stopped reading disk) |
+| Stop → text pasted (Whisper tiny) | < 1 s | inference 97–431 ms (warm/cold Metal, unchanged) + cleanup 0.06 ms + **fixed sleeps ≤ 55 ms typical** (was ~210 ms — see the budget table below) ⇒ **≈ 0.2–0.5 s** |
+| Idle RSS (tray-only launch, engine not yet warm) | < 400 MB | **95 MB** main process (was 102 MB *with* the settings webview always built; the webview's WebContent process — no longer spawned at launch — lives out-of-process, so the main-process delta understates the saving) |
+| Idle RSS (engine pre-warmed) | — | active model resident from launch by design — **1,875 MB with Parakeet v3** (0.6 B ONNX). Not a regression: SPEC §3 keeps the engine resident forever, so this was always the post-first-dictation steady state; SPEC14's pre-warm just moves the load (553 ms measured for Parakeet) to launch so it never lands between stop and paste |
+| Idle CPU | < 1 % | **0.0 %** — and the audio worker now blocks on its channel when idle (was 100 wakeups/s) and a hidden settings webview runs zero timers |
+| Cleanup filter, 1,000 words | < 1 ms | 59.6 µs per run (bench-clean; unchanged code) |
 
-Model load (Whisper tiny): 4.8 s cold file cache, 154 ms warm — which is why
-the active engine is loaded once and kept resident (`state.rs`), not per
-dictation.
+Stop→paste fixed-delay budget (SPEC14 FR-D — was ≈210 ms of
+unconditional sleeps every dictation):
+
+| Delay | Was | Now |
+| --- | --- | --- |
+| Audio flush at stop | fixed 60 ms sleep | adaptive drain: returns at 15 ms of channel quiet (typical ≤ 15 ms), hard cap 60 ms (R22) |
+| Clipboard settle | 50 ms | **20 ms** (`PRE_PASTE_DELAY_MS`) |
+| Paste-modifier hold | 100 ms | **20 ms** (`PASTE_MODIFIER_HOLD_MS`) |
+| Clipboard restore | 300 ms, off-thread | unchanged (R20 — never on the path) |
+
+Fixed sleeps on the path: **40 ms** + the adaptive drain (≤ 15 ms
+typical) ⇒ ≈ 55 ms typical, 100 ms absolute worst case. If a
+timing-sensitive app ever drops pastes, bump the named constant and log
+the measured floor in BLOCKERS.md — never revert silently.
+
+Model load (Whisper tiny): 4.8 s cold file cache, 154 ms warm; Parakeet
+v3: 553 ms (measured at pre-warm). The active engine is loaded once and
+kept resident (`state.rs`) — and since SPEC14 the load is pre-warmed in
+the background (launch / model switch / recording start), so no
+dictation's stop path ever pays it.
 
 ## Onboarding gates (SPEC2)
 
@@ -244,6 +264,78 @@ and restores the pipeline's current state icon, ignoring re-entrant calls.
 A single `easter_eggs` setting (default ON, R17) gates all three eggs; the
 overlay re-reads it at each recording start, and the command re-checks it
 server-side.
+
+## Performance pass (SPEC14)
+
+A code-level review (2026-07-18) found the app slower and heavier than its
+measured components justified; SPEC14 removed the costs with zero
+user-visible behavior change. What moved, and where it lives now:
+
+**Stop→paste fixed-sleep budget: ≈210 ms → ≤60 ms.** The old path slept a
+fixed 60 ms to flush the audio callback, 50 ms for the clipboard, and
+100 ms holding the paste modifier. Now: `audio.rs::drain_pending` (R22)
+stops the stream first, then drains until the channel is quiet 15 ms
+(hard cap 60 ms — typically returns in ≤15 ms); `paste.rs` uses 20 ms
+settle + 20 ms hold (named constants — bump per-app in BLOCKERS.md if a
+timing-sensitive target ever drops pastes, never silently).
+
+**Capture is 16 kHz end-to-end** (`audio.rs::StreamResampler`, R24):
+chunks feed a persistent rubato resampler as they arrive, in the same
+1024-frame batches the old whole-buffer path used, with the tail
+zero-pad-flushed at stop. Live-mode snapshots became plain copies — the
+old path cloned the whole device-rate buffer AND re-resampled all of it
+every 1–4 s (O(n²) over a recording; a 5-min 48 kHz recording cloned
+~58 MB per pass). `AppState::stop_pending` makes an about-to-start live
+pass yield the engine to the stop path instead of queueing a full
+re-transcription ahead of it. Cancel releases the capture allocation
+(R25).
+
+**The engine pre-warms** (`AppState::ensure_loaded`): background load at
+Ready when the active model is on disk, after `set_active_model`, and
+belt-and-braces at recording start — the 4.8 s cold load can no longer
+land between "stop" and "paste". The loader holds the engine mutex, so a
+stop mid-load waits exactly as the lazy path always did, just with a
+head start.
+
+**Nothing writes or rebuilds on the delivery path**: the retained WAV
+(now 16-bit PCM, half the size) is written on a background thread whose
+join handle Retry awaits — never a partial file; history.json,
+`history-changed`, and the tray-menu rebuild are deferred to a
+background thread; rtf.json persistence is debounced to return-to-idle /
+exit (`progress.rs::RtfStore`, R23 — live passes used to write it every
+1–4 s); tray icons are decoded once into a cache and the menu rebuilds
+on change instead of on every transition.
+
+**Idle is actually idle**: the audio worker blocks on its channel when no
+stream is active (was 100 wakeups/s forever); the settings webview is
+created lazily on first use (`show_settings_window`) instead of at every
+launch — deep links ride the window URL query (`?section=…`,
+`?updates=1`) because an emit into a just-created webview races listener
+registration — and every poll in it gates on `visibilitychange`
+(capture-dead 2 s, onboarding 1 s, Appearance preview 25 Hz, history
+refresh); onboarding ticks re-verify only the displayed step's facts
+(`factsForStep`, U21 — the tray window-server probe runs on the menubar
+step alone).
+
+**The overlay renders what the data justifies**: the effect loop is
+frame-capped at ~60 fps (30 under reduced motion) with a dt-based decay
+(U20 — the look is refresh-rate-independent now; it used to decay 4×
+faster on ProMotion), reuses one frame object, indexes level history
+instead of slicing per frame, compacts particles in place, and fireflies
+draws pre-rendered glow sprites instead of 16 shadowBlur passes per
+frame. `easter_eggs` rides the show-overlay payload (E20a — no
+get_settings round-trip per recording) and `applyTheme` memoizes the
+applied theme id (U22/E20b — no style recalc or user-theme fetch on a
+same-theme show).
+
+**One HTTP/TLS stack**: app reqwest moved to 0.13 + rustls
+(`rustls-platform-verifier` — still the OS trust store), the exact stack
+tauri-plugin-updater links, dropping the duplicate 0.12/native-tls
+tower. The network guarantee is untouched: user-initiated model
+downloads and the localhost-only enhancement endpoint remain the ONLY
+network paths. `crate-type` is `["rlib"]` (the mobile template's
+staticlib/cdylib each paid a full extra LTO link); each webview
+lazy-loads only its own app bundle chunk.
 
 ## Transcription progress (SPEC13)
 

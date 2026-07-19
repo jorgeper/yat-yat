@@ -26,7 +26,20 @@ export async function resolveThemeCss(themeId: string): Promise<string> {
   return getBuiltinTheme(themeId).css;
 }
 
+// SPEC14 FR-R6: every show-overlay re-applies the theme; when it hasn't
+// changed, skip both the user-theme fetch and the style-tag rewrite (a
+// textContent write forces a style recalc even with identical CSS).
+let appliedThemeId: string | null = null;
+
+/** Forget the memoized theme (user themes reloaded / tests). */
+export function invalidateAppliedTheme(): void {
+  appliedThemeId = null;
+}
+
 export async function applyTheme(themeId: string): Promise<void> {
+  if (themeId === appliedThemeId && document.getElementById(STYLE_ID)) {
+    return;
+  }
   const css = await resolveThemeCss(themeId);
   let tag = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
   if (!tag) {
@@ -35,4 +48,5 @@ export async function applyTheme(themeId: string): Promise<void> {
     document.head.appendChild(tag);
   }
   tag.textContent = css;
+  appliedThemeId = themeId;
 }
