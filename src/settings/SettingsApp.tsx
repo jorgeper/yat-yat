@@ -50,6 +50,9 @@ export default function SettingsApp() {
     () => new URLSearchParams(window.location.search).get("updates") === "1",
   );
   const [appVersion, setAppVersion] = useState("");
+  // SPEC15 FR-D2: the update dialog's pre-restart Accessibility warning is
+  // macOS-specific — platform comes from get_app_info, threaded as a prop.
+  const [appPlatform, setAppPlatform] = useState("");
   // SPEC11 §5.2: ↑↑↓↓←→←→BA toggles the secret Yat95 theme.
   const [eggToast, setEggToast] = useState<string | null>(null);
 
@@ -96,7 +99,10 @@ export default function SettingsApp() {
     })();
     api
       .getAppInfo()
-      .then((info) => setAppVersion(info.version))
+      .then((info) => {
+        setAppVersion(info.version);
+        setAppPlatform(info.platform);
+      })
       .catch(console.error);
     return () => unlisteners.forEach((u) => u());
   }, [refreshModels, refreshHistory]);
@@ -220,6 +226,7 @@ export default function SettingsApp() {
       {updateOpen && (
         <UpdateDialog
           currentVersion={appVersion}
+          platform={appPlatform}
           updates={updates}
           onClose={() => setUpdateOpen(false)}
         />

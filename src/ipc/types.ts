@@ -37,6 +37,9 @@ export interface Settings {
   active_model: string | null;
   onboarding_complete: boolean;
   onboarding_skips: string[];
+  // SPEC15 FR-L4: server-owned like active_model — written by Rust at every
+  // launch; a whole-object UI save never clobbers it.
+  last_run_version: string;
 }
 
 export interface ModelStatus {
@@ -157,5 +160,6 @@ export function defaultSettings(): Settings {
     active_model: null,
     onboarding_complete: false,
     onboarding_skips: [],
+    last_run_version: "",
   };
 }

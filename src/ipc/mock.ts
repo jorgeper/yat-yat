@@ -216,10 +216,11 @@ async function invoke(command: string, args?: Record<string, unknown>): Promise<
     case "get_settings":
       return structuredClone(state.settings);
     case "set_settings": {
-      // Mirrors the Rust command: active_model is server-owned and a
-      // whole-object UI write never clobbers it.
+      // Mirrors the Rust command: active_model and last_run_version are
+      // server-owned and a whole-object UI write never clobbers them.
       const incoming = structuredClone(args!.settings as Settings);
       incoming.active_model = state.settings.active_model;
+      incoming.last_run_version = state.settings.last_run_version;
       state.settings = incoming;
       try {
         sessionStorage.setItem("mock-settings", JSON.stringify(state.settings));

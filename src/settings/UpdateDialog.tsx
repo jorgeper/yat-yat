@@ -2,7 +2,10 @@
 // UpdateDialog (same state machine, same testids). Walks checking →
 // up-to-date / available → downloading → restart, with honest dismissable
 // errors. All network happens behind the updates seam (Rust-side,
-// user-initiated).
+// user-initiated). SPEC15 FR-D: while the download runs the dialog cannot be
+// dismissed (no silent background install); the ready phase warns macOS
+// users about the post-restart Accessibility re-key; restart failures land
+// in the error phase instead of a dead button.
 
 import { useEffect, useRef, useState } from "react";
 import type { UpdatesApi } from "../ipc/updates";
@@ -17,15 +20,21 @@ type Phase =
 
 export default function UpdateDialog({
   currentVersion,
+  platform,
   updates,
   onClose,
 }: {
   currentVersion: string;
+  platform: string;
   updates: UpdatesApi;
   onClose(): void;
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: "checking" });
   const disposedRef = useRef(false);
+  // SPEC15 FR-D1: the close-lock reads the live phase — the Escape listener
+  // is registered once and must not close a mid-download dialog.
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
 
   useEffect(() => {
     disposedRef.current = false;
@@ -38,7 +47,10 @@ export default function UpdateDialog({
         );
       } catch (err) {
         if (!disposedRef.current)
-          setPhase({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+          setPhase({
+            kind: "error",
+            message: `Couldn't check for updates: ${err instanceof Error ? err.message : String(err)}`,
+          });
       }
     })();
     return () => {
@@ -48,7 +60,7 @@ export default function UpdateDialog({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && phaseRef.current.kind !== "progress") onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -63,14 +75,35 @@ export default function UpdateDialog({
         });
         if (!disposedRef.current) setPhase({ kind: "ready" });
       } catch (err) {
+        // A failed download must still land in the dismissable error phase —
+        // the FR-D1 close-lock applies to the progress phase alone.
         if (!disposedRef.current)
-          setPhase({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+          setPhase({
+            kind: "error",
+            message: `Update failed: ${err instanceof Error ? err.message : String(err)}`,
+          });
       }
     })();
   };
 
+  // SPEC15 FR-D3: a rejecting restart() surfaces instead of a dead button.
+  const restart = () => {
+    void updates.restart().catch((err) => {
+      if (!disposedRef.current)
+        setPhase({
+          kind: "error",
+          message: `Restart failed: ${err instanceof Error ? err.message : String(err)}`,
+        });
+    });
+  };
+
   return (
-    <div className="modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className="modal-overlay"
+      onMouseDown={(e) =>
+        e.target === e.currentTarget && phase.kind !== "progress" && onClose()
+      }
+    >
       <div className="modal update-modal" data-testid="update-dialog">
         <h2>Check for Updates</h2>
 
@@ -115,12 +148,16 @@ export default function UpdateDialog({
         {phase.kind === "ready" && (
           <div>
             <p className="update-line">Update installed. Restart to finish.</p>
+            {platform === "macos" && (
+              <p className="update-warning" data-testid="update-ax-warning">
+                After the restart, macOS will treat the new build as a new app
+                and the dictation hotkey stays off until Accessibility is
+                re-granted. Yat Yat will guide you through the re-grant on its
+                next launch.
+              </p>
+            )}
             <div className="actions">
-              <button
-                className="btn primary"
-                data-testid="update-restart"
-                onClick={() => void updates.restart()}
-              >
+              <button className="btn primary" data-testid="update-restart" onClick={restart}>
                 Restart Yat Yat
               </button>
             </div>
@@ -129,7 +166,7 @@ export default function UpdateDialog({
 
         {phase.kind === "error" && (
           <div data-testid="update-error">
-            <p className="update-line">Couldn't check for updates: {phase.message}</p>
+            <p className="update-line">{phase.message}</p>
             <div className="actions">
               <button className="btn" onClick={onClose}>
                 Close

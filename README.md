@@ -240,6 +240,20 @@ same button appears on the Hotkey section's error. For a full re-check of
 everything (permissions, menu-bar icon, models), use Settings → General →
 **Re-run setup** — steps that still pass are skipped automatically.
 
+### After an update, the hotkey is off
+
+Alpha builds are unsigned (ad-hoc signature), and macOS ties the
+Accessibility permission to the exact signature — so **every update re-keys
+the grant** and the dictation hotkey stays off until Accessibility is
+re-granted, even though System Settings still shows Yat Yat checked (that
+entry is stale). On the first launch after an update, Yat Yat notifies you
+(when notification permission allows) and opens Settings with the warning
+banner to walk you through it. The manual fix: System Settings → Privacy &
+Security → Accessibility → select the stale **Yat Yat** entry and remove it
+(−), then re-add it (+) from /Applications — the hotkey arms within a few
+seconds, no relaunch needed. This goes away once builds are signed with a
+Developer ID.
+
 ### Dictation says "Pick a model" unexpectedly
 
 The active model lives in `~/Library/Application Support/com.yatyat.app/

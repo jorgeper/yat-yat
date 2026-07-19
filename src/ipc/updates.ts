@@ -19,6 +19,12 @@ export interface UpdateHook {
   progress: number[];
   installed: boolean;
   restarted: boolean;
+  // SPEC15 §3 mock-seam additions (browser branch/testing use, both
+  // optional so pre-SPEC15 hook literals stay valid): while `hold` is true
+  // the mock downloadAndInstall waits mid-download before finishing;
+  // `restartError` makes the mock restart() reject with that message.
+  hold?: boolean;
+  restartError?: string | null;
 }
 
 declare global {
@@ -65,6 +71,8 @@ function mockUpdates(): UpdatesApi {
         progress: [],
         installed: false,
         restarted: false,
+        hold: false,
+        restartError: null,
       });
       const next = hook.next;
       if (next && "error" in next) throw new Error(next.error);
@@ -72,7 +80,17 @@ function mockUpdates(): UpdatesApi {
     },
     async downloadAndInstall(onProgress) {
       const hook = window.__yyUpdate!;
-      for (const pct of [12, 48, 87, 100]) {
+      for (const pct of [12, 48]) {
+        hook.progress.push(pct);
+        onProgress(pct);
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      // SPEC15 §3: a set `hold` parks the download mid-progress until the
+      // test releases it — deterministic close-lock coverage (E21a).
+      while (hook.hold) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      for (const pct of [87, 100]) {
         hook.progress.push(pct);
         onProgress(pct);
         await new Promise((r) => setTimeout(r, 20));
@@ -80,7 +98,9 @@ function mockUpdates(): UpdatesApi {
       hook.installed = true;
     },
     async restart() {
-      window.__yyUpdate!.restarted = true;
+      const hook = window.__yyUpdate!;
+      if (hook.restartError) throw new Error(hook.restartError);
+      hook.restarted = true;
     },
   };
 }

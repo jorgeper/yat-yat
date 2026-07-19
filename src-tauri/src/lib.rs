@@ -76,6 +76,105 @@ pub fn ready_activation(settings_window_visible: bool) -> ReadyActivation {
     }
 }
 
+/// SPEC15 FR-L1: what launch-time recovery does about a dead Accessibility
+/// grant, decided from plain facts (pure — R26, house pattern of
+/// `ready_activation`/`firstUnmetStep`). Recover iff macOS ∧ onboarding
+/// complete ∧ Accessibility NOT granted ∧ the user did NOT defer the
+/// accessibility gate; `after_update` iff the app version changed since the
+/// last run. Mid-onboarding the wizard already owns the screen; a deliberate
+/// copy-fallback deferral is the opt-out; non-mac has no TCC at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaunchRecovery {
+    None,
+    Recover { after_update: bool },
+}
+
+pub fn launch_recovery(
+    macos: bool,
+    onboarding_complete: bool,
+    accessibility_granted: bool,
+    accessibility_skipped: bool,
+    version_changed: bool,
+) -> LaunchRecovery {
+    if macos && onboarding_complete && !accessibility_granted && !accessibility_skipped {
+        LaunchRecovery::Recover {
+            after_update: version_changed,
+        }
+    } else {
+        LaunchRecovery::None
+    }
+}
+
+/// The onboarding_skips id of the wizard's accessibility gate.
+const ACCESSIBILITY_SKIP_ID: &str = "accessibility";
+
+/// SPEC15 FR-L2/L3/L4: gather the launch facts, run the pure decision, stamp
+/// `last_run_version` (AFTER the decision read the previous value), and act
+/// on `Recover`. Called exactly once per process, at RunEvent::Ready, right
+/// after the FR-S6 init_capture attempt — never from the capture watcher.
+fn launch_recovery_check(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let current_version = app.package_info().version.to_string();
+    let (onboarding_complete, accessibility_skipped, previous_version) = {
+        let s = state.settings.read().unwrap();
+        (
+            s.onboarding_complete,
+            s.onboarding_skips.iter().any(|g| g == ACCESSIBILITY_SKIP_ID),
+            s.last_run_version.clone(),
+        )
+    };
+    #[cfg(target_os = "macos")]
+    let (macos, accessibility_granted) = (true, handy_keys::check_accessibility());
+    #[cfg(not(target_os = "macos"))]
+    let (macos, accessibility_granted) = (false, true);
+
+    let decision = launch_recovery(
+        macos,
+        onboarding_complete,
+        accessibility_granted,
+        accessibility_skipped,
+        previous_version != current_version,
+    );
+
+    // FR-L4: record this launch's version, server-owned (a UI whole-object
+    // save preserves it via preserve_server_owned — R27).
+    if previous_version != current_version {
+        let mut s = state.settings.write().unwrap();
+        s.last_run_version = current_version;
+        if let Err(e) = s.save(&state.settings_path()) {
+            log::warn!("persisting last_run_version failed: {e}");
+        }
+    }
+
+    if let LaunchRecovery::Recover { after_update } = decision {
+        log::info!("launch recovery: accessibility dead (after_update={after_update})");
+        // Best-effort notification (ad-hoc builds may lack notification
+        // permission) — the settings window + banner below is the primary
+        // signal and must appear regardless.
+        let (title, body) = if after_update {
+            (
+                "Yat Yat needs Accessibility again",
+                "The update made macOS treat Yat Yat as a new app, so the \
+                 Accessibility permission was re-keyed. The dictation hotkey \
+                 is off until it's re-granted — Settings will walk you through it.",
+            )
+        } else {
+            (
+                "Accessibility permission is missing",
+                "The dictation hotkey is off until Accessibility is granted — \
+                 Settings will walk you through it.",
+            )
+        };
+        {
+            use tauri_plugin_notification::NotificationExt;
+            let _ = app.notification().builder().title(title).body(body).show();
+        }
+        // The capture-dead banner (SPEC4 FR-F2.1) in the settings window is
+        // the recovery UI — no deep link needed.
+        show_settings_window(app, None);
+    }
+}
+
 /// macOS 26 leaves a never-activated app whose windows are all hidden (our
 /// exact startup shape: invisible settings window, hidden overlay, tray
 /// only) in the application-hidden state — and Tahoe's Dock shows no tile
@@ -421,6 +520,10 @@ pub fn run() {
                 // hotkey-manager handshake + Enigo construction the launch
                 // never needed to wait for. The 3 s watcher is the retry net.
                 let _ = init_capture(_app);
+                // SPEC15 FR-L2: the one launch-recovery decision — after the
+                // init_capture attempt (a healthy grant arms first and yields
+                // None), never re-fired by the capture watcher.
+                launch_recovery_check(_app);
                 // SPEC14 FR-W2a: pre-warm the STT engine in the background so
                 // the first dictation's stop path never pays the multi-second
                 // cold load. Never on the main/pipeline thread.
@@ -474,5 +577,110 @@ mod ready_activation_tests {
     #[test]
     fn r19_visible_wizard_keeps_focus() {
         assert_eq!(ready_activation(true), ReadyActivation::ActivateKeepFocus);
+    }
+}
+
+#[cfg(test)]
+mod launch_recovery_tests {
+    use super::*;
+
+    // R26 (SPEC15 §3.1): the launch-recovery decision, full matrix. The
+    // signature is plain bools — no Tauri/TCC types (purity is the point).
+    fn decide(
+        macos: bool,
+        complete: bool,
+        granted: bool,
+        deferred: bool,
+        version_changed: bool,
+    ) -> LaunchRecovery {
+        launch_recovery(macos, complete, granted, deferred, version_changed)
+    }
+
+    #[test]
+    fn r26_non_mac_is_none() {
+        for version_changed in [false, true] {
+            assert_eq!(
+                decide(false, true, false, false, version_changed),
+                LaunchRecovery::None
+            );
+        }
+    }
+
+    #[test]
+    fn r26_mid_onboarding_is_none() {
+        // The wizard already owns the screen — never fire over it.
+        for version_changed in [false, true] {
+            assert_eq!(
+                decide(true, false, false, false, version_changed),
+                LaunchRecovery::None
+            );
+        }
+    }
+
+    #[test]
+    fn r26_deferred_accessibility_gate_is_none() {
+        // A deliberate copy-fallback deferral is the opt-out.
+        for version_changed in [false, true] {
+            assert_eq!(
+                decide(true, true, false, true, version_changed),
+                LaunchRecovery::None
+            );
+        }
+    }
+
+    #[test]
+    fn r26_healthy_grant_is_none() {
+        for version_changed in [false, true] {
+            assert_eq!(
+                decide(true, true, true, false, version_changed),
+                LaunchRecovery::None
+            );
+        }
+    }
+
+    #[test]
+    fn r26_recover_after_update_when_version_changed() {
+        assert_eq!(
+            decide(true, true, false, false, true),
+            LaunchRecovery::Recover { after_update: true }
+        );
+    }
+
+    #[test]
+    fn r26_recover_generic_when_version_unchanged() {
+        assert_eq!(
+            decide(true, true, false, false, false),
+            LaunchRecovery::Recover {
+                after_update: false
+            }
+        );
+    }
+
+    #[test]
+    fn r26_full_matrix_recovers_iff_all_gates_pass() {
+        // All 32 combinations: Recover exactly when macOS ∧ onboarding
+        // complete ∧ grant dead ∧ gate not deferred; after_update mirrors
+        // version_changed and nothing else.
+        for i in 0..32u8 {
+            let (macos, complete, granted, deferred, version_changed) = (
+                i & 1 != 0,
+                i & 2 != 0,
+                i & 4 != 0,
+                i & 8 != 0,
+                i & 16 != 0,
+            );
+            let expected = if macos && complete && !granted && !deferred {
+                LaunchRecovery::Recover {
+                    after_update: version_changed,
+                }
+            } else {
+                LaunchRecovery::None
+            };
+            assert_eq!(
+                decide(macos, complete, granted, deferred, version_changed),
+                expected,
+                "macos={macos} complete={complete} granted={granted} deferred={deferred} version_changed={version_changed}"
+            );
+        }
     }
 }

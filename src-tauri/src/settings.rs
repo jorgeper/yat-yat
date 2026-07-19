@@ -89,6 +89,11 @@ pub struct Settings {
     /// Skippable onboarding gates the user explicitly skipped (SPEC2 §3);
     /// they count as met when resuming the wizard.
     pub onboarding_skips: Vec<String>,
+    /// The app version that last ran (SPEC15 FR-L4). Server-owned: written by
+    /// Rust at every launch after the recovery decision reads the previous
+    /// value; empty on legacy JSON, which honestly reads as "version changed"
+    /// (the SPEC15 build itself arrived by update or reinstall).
+    pub last_run_version: String,
 }
 
 impl Default for Settings {
@@ -115,6 +120,7 @@ impl Default for Settings {
             active_model: None,
             onboarding_complete: false,
             onboarding_skips: Vec::new(),
+            last_run_version: String::new(),
         }
     }
 }
@@ -157,6 +163,7 @@ impl Settings {
     /// was fetched before the model was activated).
     pub fn preserve_server_owned(&mut self, current: &Settings) {
         self.active_model = current.active_model.clone();
+        self.last_run_version = current.last_run_version.clone();
     }
 
     pub fn clean_options(&self) -> crate::cleanup::CleanOptions {
@@ -329,6 +336,47 @@ mod tests {
         s.easter_eggs = false;
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s, "persisted OFF round-trips");
+    }
+
+    // R27 (SPEC15 §3.2): last_run_version is server-owned — a whole-object
+    // UI save must never clobber it (R5's real-bug lineage).
+    #[test]
+    fn r27_ui_write_preserves_server_owned_last_run_version() {
+        let mut current = Settings::default();
+        current.last_run_version = "0.1.0-alpha.10".into();
+
+        // Stale UI copy: fetched before Rust stamped the version, then edited.
+        let mut incoming = Settings::default();
+        incoming.launch_at_login = true;
+        assert_eq!(incoming.last_run_version, "");
+
+        incoming.preserve_server_owned(&current);
+        assert_eq!(incoming.last_run_version, "0.1.0-alpha.10");
+        assert!(incoming.launch_at_login, "UI-owned fields still applied");
+
+        // A UI copy that happens to carry a value never wins either.
+        let mut incoming2 = Settings::default();
+        incoming2.last_run_version = "9.9.9-stale".into();
+        incoming2.preserve_server_owned(&current);
+        assert_eq!(incoming2.last_run_version, "0.1.0-alpha.10");
+    }
+
+    // R27 (serde half): legacy settings.json without the field loads with the
+    // serde default (empty ⇒ reads as version_changed on first SPEC15 launch).
+    #[test]
+    fn r27_legacy_json_defaults_last_run_version_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, r#"{"hotkey":"F19","onboarding_complete":true}"#).unwrap();
+        let loaded = Settings::load(&path);
+        assert_eq!(loaded.last_run_version, "");
+        assert_eq!(loaded.hotkey, "F19", "legacy fields still honored");
+
+        // And a stamped value round-trips.
+        let mut s = Settings::default();
+        s.last_run_version = "0.1.0-alpha.11".into();
+        s.save(&path).unwrap();
+        assert_eq!(Settings::load(&path), s);
     }
 
     // R8: enhancement endpoint guard.

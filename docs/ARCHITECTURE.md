@@ -368,6 +368,36 @@ variables only; a class change, not an animation, so it survives
 reduced motion). With enhancement enabled the bar crawls near the cap
 during the LLM round-trip — expected, not a bug.
 
+## Post-update recovery (SPEC15)
+
+Release builds are **ad-hoc signed** (`signingIdentity: "-"`), so every
+release carries a different code signature — and macOS keys the
+Accessibility (TCC) grant to that signature. The failure chain after an
+in-app update relaunches: new signature → the old TCC grant no longer
+matches (System Settings still shows a stale checked entry) →
+`check_accessibility()` is false → `init_capture` defers forever → the
+hotkey never arms, silently. SPEC15's answer is detection, not repair (TCC
+is user-only by design): `launch_recovery` in `src-tauri/src/lib.rs` — a
+pure decision function (plain bools in, `None | Recover { after_update }`
+out; R26 drives the matrix) — runs **once per process** at
+`RunEvent::Ready`, right after the FR-S6 `init_capture` attempt, so a
+healthy grant arms first and decides `None`. It recovers only when macOS ∧
+onboarding complete ∧ grant dead ∧ the accessibility gate wasn't
+deliberately deferred in `onboarding_skips`; the 3 s capture watcher never
+re-fires it (no nag loop). On `Recover` it posts a best-effort notification
+(`after_update` distinguishes "the update re-keyed Accessibility" from
+generic missing-permission wording) and shows the settings window, whose
+capture-dead banner → "Fix in setup" → wizard accessibility gate is the
+existing recovery UI. `after_update` comes from `last_run_version`, a
+server-owned settings field (preserved across whole-object UI saves via
+`preserve_server_owned`, R27) stamped by Rust each launch *after* the
+decision reads the previous value. The update dialog is honest about all
+this up front: no dismissing mid-download, a `ready`-phase macOS warning
+about the re-key, restart failures surfaced in the error phase (U23,
+E21a–E21b). The definitive structural fix — Developer ID signing +
+notarization, whose TCC grant survives updates — is out of scope here and
+tracked for a future spec.
+
 ## Design notes
 
 - **One pipeline thread** serializes Idle→Recording→Processing, so double
