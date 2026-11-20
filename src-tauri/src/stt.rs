@@ -15,6 +15,19 @@ use transcribe_rs::whisper_cpp::{WhisperEngine, WhisperInferenceParams};
 const WHISPER_INITIAL_PROMPT: &str =
     "The following is a clear, well-punctuated transcription of the speaker's words.";
 
+/// Where Parakeet runs: the CPU, or (macOS, experimental) Core ML, which
+/// can use the GPU and Neural Engine. With Core ML compiled in, the
+/// library's own default ("auto") would pick it silently, so every load
+/// goes through here and states its choice.
+pub fn parakeet_accelerator(coreml: bool) -> transcribe_rs::accel::OrtAccelerator {
+    use transcribe_rs::accel::OrtAccelerator;
+    if coreml && cfg!(target_os = "macos") {
+        OrtAccelerator::CoreMl
+    } else {
+        OrtAccelerator::CpuOnly
+    }
+}
+
 pub enum SttEngine {
     Whisper(WhisperEngine),
     Parakeet(ParakeetModel),
@@ -26,19 +39,25 @@ pub struct LoadedModel {
     /// costs a second pass over the audio (measured: it doubles the time of
     /// a short dictation on large-v3-turbo). Parakeet ignores it.
     pub whisper_language: Option<String>,
+    /// Whether this (Parakeet) model was loaded onto Core ML; always false
+    /// for Whisper. The accelerator is fixed at load, so a changed setting
+    /// means a reload.
+    pub coreml: bool,
     engine: SttEngine,
 }
 
 impl LoadedModel {
-    pub fn load(entry: &ModelEntry, data_dir: &Path) -> Result<Self> {
-        let mut loaded = Self::load_path(entry.engine, &entry.engine_path(data_dir))
+    pub fn load(entry: &ModelEntry, data_dir: &Path, coreml: bool) -> Result<Self> {
+        let mut loaded = Self::load_path(entry.engine, &entry.engine_path(data_dir), coreml)
             .with_context(|| format!("loading model {}", entry.id))?;
         loaded.model_id = entry.id.clone();
         Ok(loaded)
     }
 
     /// Load from an explicit path (CLI / validation harness).
-    pub fn load_path(family: EngineFamily, path: &Path) -> Result<Self> {
+    pub fn load_path(family: EngineFamily, path: &Path, coreml: bool) -> Result<Self> {
+        let coreml = coreml && family == EngineFamily::Parakeet;
+        transcribe_rs::accel::set_ort_accelerator(parakeet_accelerator(coreml));
         let engine = match family {
             EngineFamily::Whisper => SttEngine::Whisper(
                 WhisperEngine::load(path)
@@ -52,6 +71,7 @@ impl LoadedModel {
         Ok(Self {
             model_id: path.display().to_string(),
             whisper_language: None,
+            coreml,
             engine,
         })
     }
@@ -132,6 +152,24 @@ pub fn strip_prompt_echo(text: &str) -> String {
 #[cfg(test)]
 mod echo_tests {
     use super::*;
+
+    // R40: Parakeet runs on the CPU unless Core ML was asked for — never
+    // the library's "auto", which would pick Core ML by itself now that it
+    // is compiled in (measured slower: see ARCHITECTURE.md).
+    #[test]
+    fn r40_parakeet_stays_on_cpu_unless_coreml_is_chosen() {
+        use transcribe_rs::accel::OrtAccelerator;
+        assert_eq!(parakeet_accelerator(false), OrtAccelerator::CpuOnly);
+        let chosen = parakeet_accelerator(true);
+        if cfg!(target_os = "macos") {
+            assert_eq!(chosen, OrtAccelerator::CoreMl);
+        } else {
+            assert_eq!(chosen, OrtAccelerator::CpuOnly, "no Core ML off macOS");
+        }
+        assert!(!crate::settings::Settings::default().parakeet_coreml, "off by default");
+        let legacy: crate::settings::Settings = serde_json::from_str(r#"{"hotkey":"F19"}"#).unwrap();
+        assert!(!legacy.parakeet_coreml, "legacy settings stay on the CPU");
+    }
 
     // R16: the prompt-echo filter (silence hallucination guard).
     #[test]

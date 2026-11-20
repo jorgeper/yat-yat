@@ -28,6 +28,8 @@ export interface Settings {
   live_transcription: boolean;
   // "auto" or a Whisper language code ("en", "es", …); Parakeet ignores it.
   whisper_language: string;
+  // Experimental (macOS): Parakeet through Core ML instead of the CPU.
+  parakeet_coreml: boolean;
   overlay_effect: string;
   overlay_theme: string;
   focus_guard: boolean;
@@ -152,6 +154,7 @@ export function defaultSettings(): Settings {
     // SPEC3 FR-L1 — see the ARCHITECTURE.md divergence note).
     live_transcription: false,
     whisper_language: "auto",
+    parakeet_coreml: false,
     overlay_effect: "classic-bars",
     overlay_theme: "indigo",
     focus_guard: true,

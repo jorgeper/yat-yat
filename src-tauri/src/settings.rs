@@ -68,6 +68,9 @@ pub struct Settings {
     /// from the audio, an extra model pass on every dictation) or a
     /// language code such as "en". Parakeet ignores it.
     pub whisper_language: String,
+    /// Experimental, macOS: run Parakeet through Core ML (GPU / Neural
+    /// Engine) instead of the CPU. Default off — it measured slower.
+    pub parakeet_coreml: bool,
     /// Visualizer effect id (SPEC6; unknown ids fall back to the default).
     pub overlay_effect: String,
     /// Overlay theme id — built-in id or `user:<file>` (SPEC6).
@@ -115,6 +118,7 @@ impl Default for Settings {
             live_transcription: false,
             // "auto" keeps what every earlier build did.
             whisper_language: "auto".into(),
+            parakeet_coreml: false,
             overlay_effect: "classic-bars".into(),
             overlay_theme: "indigo".into(),
             focus_guard: true,
