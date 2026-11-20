@@ -30,6 +30,7 @@ Right ⌘ (handy-keys event tap)
 | `registry.rs` | Data-driven model catalog (`models.json`) | R7 |
 | `history.rs` | 20-entry ring buffer + retained last WAV | R6 |
 | `audio.rs` | cpal capture worker thread, resampling, WAV IO | resample/WAV tests |
+| `chunking.rs` | Pure pause-finding + overlap stitching for chunked transcription | R28–R30, R32–R33 |
 | `stt.rs` | Engine abstraction (Whisper/Parakeet), `load_path` for CLI | exercised by I1 |
 | `downloader.rs` | Resume-able downloads, SHA-256 verify, tar.gz extract | sha/cancel tests |
 | `enhance.rs` | Ollama client, warmup, timeout fallback | localhost-guard tests |
@@ -420,6 +421,68 @@ about the re-key, restart failures surfaced in the error phase (U23,
 E21a–E21b). The definitive structural fix — Developer ID signing +
 notarization, whose TCC grant survives updates — is out of scope here and
 tracked for a future spec.
+
+## Chunked transcription while recording (post-SPEC16)
+
+Owner-requested directly, without a SPEC/GOAL pair (2026-11-19) — this
+section is its record. It amends the SPEC3/SPEC14 statement that the stop
+path "takes the full buffer": with Parakeet and live mode off, it now takes
+only the tail.
+
+**Why.** The stop path handed the whole recording to the engine after the
+user stopped, and Parakeet's cost grows faster than the audio (M5, release,
+int8 ONNX on CPU): 35 s → 0.95 s, 70 s → 2.1 s, 140 s → 5.1 s. A field
+log confirmed the app matched the CLI: 28 s of speech, `stop -> delivered
+in 817 ms`. The wait under the progress fill was that single pass.
+
+**What.** While recording, `pipeline.rs::chunk_loop` polls every 250 ms,
+asks the pure `chunking::next_chunk` for a cut, and transcribes the
+finished stretch through the warm engine. At stop, `finish_recording`
+stops the chunker (waiting out a pass in flight — that audio is owed
+either way), transcribes only the audio after the last cut, and runs the
+unchanged cleanup → enhancement → focus guard → paste path. A recording
+with no cut takes the old whole-buffer path, byte-for-byte.
+
+**Cut rules** (`find_cut`, R28–R29): never under 4 s; the longest pause of
+≥ 500 ms (≥ 250 ms once 15 s are pending), cut mid-pause; past 30 s of
+unbroken speech, the quietest 200 ms. Silence is relative to the stretch's
+own loud level, so no calibration and no VAD model.
+
+**Why overlap + stitching** (R32–R33). A chunk transcribed alone gets a
+capital on its first word and a period on its last regardless of the
+sentence (measured on real dictation: a capital and a full stop appeared
+mid-sentence at every cut). So each pass also gets 2 s of audio before its chunk and 1.5 s
+after, and consecutive passes are stitched by aligning the words both
+heard in the overlap (LCS on normalized text + time proximity); a word
+only one pass heard is kept if that pass owns its side of the cut. Two
+engine behaviors shaped this, both measured: word **end** times are
+useless (a word "lasts" until the next one starts, so the word before a
+4 s pause ends 4 s later — position is judged by start time only), and a
+pass often **hallucinates at a truncated window end** (several invented
+words, all stamped with the window's last instant), which is exactly the region the next pass overrides.
+
+**Scope.** Parakeet only: Whisper pays a fixed ~30 s encoder window per
+pass (≈ 0.85 s on the same machine for a 2.5 s clip), so extra passes
+would cost more than they save. Off when `live_transcription` is on —
+live passes already own the engine during recording.
+
+**Measured** (same machine, `yat-yat transcribe --chunked`, which replays
+the live rules over a WAV):
+
+| Recording | Whole-buffer pass (old wait) | Tail after stop (new wait) | Passes during recording |
+| --- | --- | --- | --- |
+| 30.5 s real dictation | 0.91–1.13 s | 0.16–0.19 s | 5 |
+| 35 s synthesized | 0.92–1.55 s | 0.27–0.29 s | 3 |
+| 140 s synthesized | 5.2–7.7 s | 0.27–0.28 s | 15 |
+
+Background passes cost about 5 % of recording time in CPU (7.2 s over
+140 s). Text versus the whole-buffer pass: same words on the synthesized
+clips (punctuation and hyphenation vary the way the engine's own repeats
+do); on the real dictation no dropped or duplicated words, two word
+choices changed (both arguably more correct than the whole-buffer
+pass) and one comma became a period at a 1.2 s
+pause. One real recording is a thin sample — treat join quality as
+field-unproven.
 
 ## Design notes
 

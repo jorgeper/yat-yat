@@ -69,6 +69,13 @@ impl CaptureBuffer {
         self.samples.clone()
     }
 
+    /// Copy of the audio captured from sample `from` onward (the chunker's
+    /// view: everything since its last cut). Empty when `from` is past the
+    /// end. Capture continues untouched.
+    pub fn snapshot_from(&self, from: usize) -> Vec<f32> {
+        self.samples.get(from..).map(<[f32]>::to_vec).unwrap_or_default()
+    }
+
     pub fn take(&mut self) -> Vec<f32> {
         std::mem::take(&mut self.samples)
     }
@@ -170,5 +177,20 @@ mod tests {
         let taken = buffer.take();
         assert_eq!(taken.len(), 5);
         assert!(buffer.is_empty(), "take drains for the final pass");
+    }
+
+    // R31: the chunker's partial snapshot — only the audio after its last
+    // cut, never disturbing capture, and safe past the end.
+    #[test]
+    fn r31_snapshot_from_copies_only_the_pending_audio() {
+        let mut buffer = CaptureBuffer::default();
+        buffer.push_chunk(&[0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(buffer.snapshot_from(0), vec![0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(buffer.snapshot_from(3), vec![0.4]);
+        assert!(buffer.snapshot_from(4).is_empty());
+        assert!(buffer.snapshot_from(99).is_empty(), "past the end is empty, not a panic");
+        buffer.push_chunk(&[0.5]);
+        assert_eq!(buffer.snapshot_from(3), vec![0.4, 0.5], "capture continued");
+        assert_eq!(buffer.len(), 5, "snapshots are non-destructive");
     }
 }
