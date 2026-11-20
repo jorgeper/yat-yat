@@ -52,6 +52,18 @@ impl LiveInterval {
     }
 }
 
+/// Shortest rest between two live preview passes on the chunked path
+/// (pipeline::chunk_loop).
+pub const PREVIEW_MIN_GAP: Duration = Duration::from_millis(400);
+
+/// How long the chunked live path rests after a preview pass that took
+/// `pass`: at least [`PREVIEW_MIN_GAP`], and never less than the pass
+/// itself — so previews use at most half of one core however slow the
+/// machine, the same promise [`LiveInterval`] makes for whole-buffer passes.
+pub fn preview_gap(pass: Duration) -> Duration {
+    pass.max(PREVIEW_MIN_GAP)
+}
+
 /// Accumulates mono samples during a recording. Snapshots are non-destructive
 /// (SPEC3 FR-L2: capture must not hiccup); `take` drains for the final pass.
 #[derive(Debug, Default)]
@@ -141,6 +153,21 @@ mod tests {
         let mut interval = LiveInterval::default();
         interval.on_pass(Duration::from_millis(450)); // between 30% and 60%
         assert_eq!(interval.current(), Duration::from_millis(1000));
+    }
+
+    // R41: the chunked live path's pacing — a floor between previews, and
+    // at most half the time spent transcribing on a slow machine.
+    #[test]
+    fn r41_preview_gap_has_a_floor_and_caps_the_duty_cycle() {
+        assert_eq!(preview_gap(Duration::from_millis(0)), PREVIEW_MIN_GAP);
+        assert_eq!(preview_gap(Duration::from_millis(150)), PREVIEW_MIN_GAP);
+        assert_eq!(preview_gap(PREVIEW_MIN_GAP), PREVIEW_MIN_GAP);
+        for slow_ms in [401u64, 900, 5_000] {
+            let pass = Duration::from_millis(slow_ms);
+            assert_eq!(preview_gap(pass), pass, "rest as long as the pass took");
+        }
+        // Faster than the whole-buffer cadence it replaces.
+        assert!(PREVIEW_MIN_GAP < Duration::from_millis(BASE_INTERVAL_MS));
     }
 
     // R25: clear (the Cancel path) releases the buffer's allocation — a

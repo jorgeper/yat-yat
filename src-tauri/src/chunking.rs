@@ -276,6 +276,24 @@ pub fn to_absolute(mut words: Vec<Word>, window_start: usize) -> Vec<Word> {
     words
 }
 
+/// Shortest stretch of audio worth a live preview pass: under a second the
+/// engine produces noise (the same floor the whole-buffer live loop uses).
+pub const PREVIEW_MIN_SAMPLES: usize = RATE;
+
+/// The text to show while recording: what is already committed plus a
+/// tentative reading of the audio after the last cut (`tail`, absolute
+/// times, from a pass over the context window). `committed` is not
+/// touched — the tail is re-read on every preview and only a real cut
+/// commits words.
+pub fn preview_text(committed: &[Word], tail: Vec<Word>, seam_secs: f32) -> String {
+    if committed.is_empty() {
+        return words_text(&tail);
+    }
+    let mut all = committed.to_vec();
+    stitch(&mut all, tail, seam_secs);
+    words_text(&all)
+}
+
 /// Replay the live cut rules over a finished recording: the cuts a chunker
 /// polling every `poll_secs` would have made, assuming each chunk's
 /// transcription finished before the next poll. Returns absolute sample
@@ -534,6 +552,56 @@ mod tests {
             "I want you to review drafts so that it works.",
             "no duplicated or dropped words, and neither pass's edge artifact survives"
         );
+    }
+
+    // R42: the live preview — committed words plus a tentative reading of
+    // the audio after the last cut, without committing anything.
+    #[test]
+    fn r42_preview_adds_the_tail_without_touching_committed_words() {
+        // Nothing committed yet: the preview is just the pass.
+        assert_eq!(
+            preview_text(&[], words(&[(0.2, "Hello"), (0.6, "there.")]), 0.0),
+            "Hello there."
+        );
+
+        let committed = words(&[
+            (7.0, "I"),
+            (7.4, "want"),
+            (8.2, "you"),
+            (8.6, "to"),
+            (9.0, "review"),
+        ]);
+        let before = committed.clone();
+        // The tail pass starts 2 s before the cut at 10 s, as every chunk does.
+        let tail = words(&[
+            (8.3, "You"),
+            (8.7, "to"),
+            (9.1, "review"),
+            (10.5, "drafts"),
+            (11.0, "so"),
+        ]);
+        assert_eq!(
+            preview_text(&committed, tail, 10.0),
+            "I want you to review drafts so"
+        );
+        assert_eq!(committed, before, "a preview commits nothing");
+        // A later preview of a longer tail replaces the earlier one cleanly.
+        let longer = words(&[
+            (8.3, "You"),
+            (8.7, "to"),
+            (9.1, "review"),
+            (10.5, "drafts"),
+            (11.0, "so"),
+            (11.4, "that"),
+            (11.8, "it"),
+            (12.2, "works."),
+        ]);
+        assert_eq!(
+            preview_text(&committed, longer, 10.0),
+            "I want you to review drafts so that it works."
+        );
+        // Silence after the cut: the committed text stands.
+        assert_eq!(preview_text(&committed, Vec::new(), 10.0), "I want you to review");
     }
 
     #[test]

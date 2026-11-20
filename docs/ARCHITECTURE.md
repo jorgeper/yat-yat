@@ -484,6 +484,32 @@ pass) and one comma became a period at a 1.2 s
 pause. One real recording is a thin sample — treat join quality as
 field-unproven.
 
+## Live transcription on the chunker (post-SPEC16)
+
+Owner-requested directly (2026-11-19). The SPEC3 live loop re-reads the
+whole recording on every pass, so on Parakeet a pass grew from 0.26 s at
+10 s of speech to 5.2 s at 140 s — the on-screen text fell seconds
+behind, and the stop path could queue behind a pass in flight. Live mode
+also switched chunking off, so stop paid a whole-recording pass again.
+
+On Parakeet the chunker thread now does both jobs (`pipeline::chunk_loop`
+with `live`): it commits finished stretches as before, and between cuts
+it previews the audio since the last cut — one pass over that window,
+stitched onto the committed words for display only
+(`chunking::preview_text`, R42). Previews rest `live::preview_gap` after
+each pass (R41: 400 ms floor, at most half a core). Whisper keeps the
+SPEC3 loop: its cost per pass is a fixed window, not the audio length.
+
+Replay (`transcribe --live`, M5, one update per second of speech):
+
+| Recording | Whole so far, worst update | Since last cut, worst update |
+|---|---|---|
+| 30.5 s real dictation | 794 ms | 279 ms |
+| 140 s | 5185 ms | 458 ms |
+
+Engine time over the 140 s recording: 326 s the old way (it could never
+have kept up with one update a second) against 29 s.
+
 ## Design notes
 
 - **One pipeline thread** serializes Idle→Recording→Processing, so double
