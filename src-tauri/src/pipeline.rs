@@ -399,6 +399,7 @@ fn chunk_loop(
     // how much audio the last one covered (no new audio, no new preview).
     let mut preview_due = Instant::now();
     let mut previewed_to = 0usize;
+    let mut filter = crate::chunking::PreviewFilter::default();
     loop {
         // Wait out the poll interval — but a stop wakes us at once, so the
         // stop path never waits on this sleep.
@@ -432,11 +433,19 @@ fn chunk_loop(
                 let t0 = Instant::now();
                 match state.transcribe_words(&app, &buf) {
                     Ok(words) => {
-                        let text = crate::chunking::preview_text(
-                            &progress.lock().unwrap().words,
-                            crate::chunking::to_absolute(words, start),
-                            committed as f32 / 16_000.0,
-                        );
+                        let (preview, final_words) = {
+                            let progress = progress.lock().unwrap();
+                            (
+                                crate::chunking::preview_text(
+                                    &progress.words,
+                                    crate::chunking::to_absolute(words, start),
+                                    committed as f32 / 16_000.0,
+                                ),
+                                crate::chunking::final_word_count(&progress.words, committed),
+                            )
+                        };
+                        // Only what two previews agree on reaches the screen.
+                        let text = filter.confirmed(&preview, final_words);
                         // A stop during the pass owns the overlay now.
                         if !stop.load(Ordering::SeqCst) && state.recorder.is_recording() {
                             overlay::emit_stream_text(&app, &text);

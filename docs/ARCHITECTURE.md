@@ -500,15 +500,27 @@ stitched onto the committed words for display only
 each pass (R41: 400 ms floor, at most half a core). Whisper keeps the
 SPEC3 loop: its cost per pass is a fixed window, not the audio length.
 
-Replay (`transcribe --live`, M5, one update per second of speech):
+Shown raw, previews flicker: a window that ends mid-phrase makes the
+engine invent an ending ("…we can't be able to do it.") that the next
+preview takes back. `chunking::PreviewFilter` (R43) therefore sends a
+preview only up to the last word the previous preview also had; committed
+words are always sent. On the overlay side, `liveText.ts` realigns the
+tentative tail when a pass re-words stable text ("third party" →
+"third-party"), which used to repeat or swallow a word (U25).
 
-| Recording | Whole so far, worst update | Since last cut, worst update |
-|---|---|---|
-| 30.5 s real dictation | 794 ms | 279 ms |
-| 140 s | 5185 ms | 458 ms |
+Replay (`transcribe --live`, M5): the app's loop in audio time, a preview
+every 0.5 s, each one timed against re-reading the whole recording so far.
 
-Engine time over the 140 s recording: 326 s the old way (it could never
-have kept up with one update a second) against 29 s.
+| Recording | Whole so far, worst | Since last cut, worst | Engine time, old → new |
+|---|---|---|---|
+| 30.5 s real dictation | 835 ms | 401 ms | 25.5 s → 11.2 s |
+| 35 s, few pauses | 1404 ms | 597 ms | 34.2 s → 20.7 s |
+
+The gap widens with length: the old cost grows with the whole recording
+(5.2 s per pass at 140 s), the new one only with the time since the last
+pause. Feeding the replayed previews through the overlay's stabilizer,
+the text on screen ends within two or three words of the final
+transcript on both recordings.
 
 ## Design notes
 

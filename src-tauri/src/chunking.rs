@@ -294,6 +294,94 @@ pub fn preview_text(committed: &[Word], tail: Vec<Word>, seam_secs: f32) -> Stri
     words_text(&all)
 }
 
+/// Filters live previews down to what can be trusted on screen.
+///
+/// A preview's window ends wherever the speaker happens to be, usually
+/// mid-phrase, and the engine papers over the cut: it invents an ending
+/// ("…we can't be able to do it.") that the next preview takes back. Shown
+/// raw, the text grows, shrinks and regrows. So a preview is shown only up
+/// to the last word the previous preview also had (in order) — invented
+/// endings almost never repeat — and committed words always are. A word
+/// the engine keeps re-reading mid-phrase does not hold back what follows.
+#[derive(Debug, Default)]
+pub struct PreviewFilter {
+    /// The previous preview, as normalized words.
+    last: Vec<String>,
+}
+
+impl PreviewFilter {
+    /// Word identity for agreement: case and punctuation do not count.
+    fn norm(word: &str) -> String {
+        word.chars()
+            .filter(|c| c.is_alphanumeric() || *c == '\'')
+            .flat_map(char::to_lowercase)
+            .collect()
+    }
+
+    /// Length of the part of `cur` that `prev` confirms: up to and including
+    /// the last word of `cur` on a longest common subsequence with `prev`.
+    fn agreed_len(prev: &[String], cur: &[String]) -> usize {
+        let prefix = prev.iter().zip(cur).take_while(|(a, b)| a == b).count();
+        let (a, b) = (&prev[prefix..], &cur[prefix..]);
+        // Previews differ near their ends; past the shared start the two
+        // remainders are short. If they are not, the prefix is the answer.
+        if a.is_empty() || b.is_empty() || a.len() * b.len() > 250_000 {
+            return prefix;
+        }
+        // lcs[i][j] = LCS length of a[i..] and b[j..].
+        let mut lcs = vec![vec![0u16; b.len() + 1]; a.len() + 1];
+        for i in (0..a.len()).rev() {
+            for j in (0..b.len()).rev() {
+                lcs[i][j] = if a[i] == b[j] && !a[i].is_empty() {
+                    lcs[i + 1][j + 1] + 1
+                } else {
+                    lcs[i + 1][j].max(lcs[i][j + 1])
+                };
+            }
+        }
+        // Walk one LCS, remembering the last word of `cur` on it.
+        let (mut i, mut j, mut last) = (0, 0, None);
+        while i < a.len() && j < b.len() {
+            if a[i] == b[j] && !a[i].is_empty() {
+                last = Some(j);
+                i += 1;
+                j += 1;
+            } else if lcs[i + 1][j] >= lcs[i][j + 1] {
+                i += 1;
+            } else {
+                j += 1;
+            }
+        }
+        prefix + last.map_or(0, |j| j + 1)
+    }
+
+    /// The part of `preview` (a full [`preview_text`]) to show, given that
+    /// its first `committed_words` words are final.
+    pub fn confirmed(&mut self, preview: &str, committed_words: usize) -> String {
+        let words: Vec<&str> = preview.split_whitespace().collect();
+        let normed: Vec<String> = words.iter().map(|w| Self::norm(w)).collect();
+        let agreed = Self::agreed_len(&self.last, &normed);
+        self.last = normed;
+        let shown = agreed.max(committed_words).min(words.len());
+        let mut text = words[..shown].join(" ");
+        // The last word of a whole preview carries the invented ending's
+        // punctuation; mid-preview punctuation was written in context.
+        if shown == words.len() && shown > committed_words {
+            let trimmed = text.trim_end_matches(['.', '?', '!', ',']).len();
+            text.truncate(trimmed);
+        }
+        text
+    }
+}
+
+/// How many of `words` are final for a cut at `committed` samples: those
+/// that start before it. (The list also holds the words just after the cut,
+/// from the last pass's context — the next pass re-reads those.)
+pub fn final_word_count(words: &[Word], committed: usize) -> usize {
+    let seam = committed as f32 / RATE as f32;
+    words.iter().filter(|w| w.start < seam).count()
+}
+
 /// Replay the live cut rules over a finished recording: the cuts a chunker
 /// polling every `poll_secs` would have made, assuming each chunk's
 /// transcription finished before the next poll. Returns absolute sample
@@ -602,6 +690,58 @@ mod tests {
         );
         // Silence after the cut: the committed text stands.
         assert_eq!(preview_text(&committed, Vec::new(), 10.0), "I want you to review");
+    }
+
+    // R43: only words two consecutive previews agree on reach the screen;
+    // an invented ending never does, and committed words always do.
+    #[test]
+    fn r43_preview_filter_shows_only_what_two_previews_agree_on() {
+        let mut filter = PreviewFilter::default();
+        // First preview: nothing to agree with yet.
+        assert_eq!(filter.confirmed("We should rewrite the report.", 0), "");
+        // The engine takes "report." back; the agreed part shows.
+        assert_eq!(
+            filter.confirmed("We should rewrite the onboarding copy.", 0),
+            "We should rewrite the"
+        );
+        // An invented ending appears once and is never shown.
+        assert_eq!(
+            filter.confirmed("We should rewrite the onboarding copy we can't be able to.", 0),
+            "We should rewrite the onboarding copy"
+        );
+        assert_eq!(
+            filter.confirmed("We should rewrite the onboarding copy rather than add.", 0),
+            "We should rewrite the onboarding copy"
+        );
+        // Agreement ignores case and punctuation, and uses the newest
+        // rendering; a fully agreed preview drops its closing punctuation.
+        assert_eq!(
+            filter.confirmed("We should rewrite the onboarding copy, rather than add.", 0),
+            "We should rewrite the onboarding copy, rather than add"
+        );
+
+        // Committed words show even when the previous preview disagrees
+        // (a cut re-reads the words around it), punctuation intact.
+        let mut filter = PreviewFilter::default();
+        filter.confirmed("Hello there general", 0);
+        assert_eq!(
+            filter.confirmed("Hello their. General Kenobi", 2),
+            "Hello their. General"
+        );
+        assert_eq!(filter.confirmed("Hello you. Kenobi", 2), "Hello you. Kenobi");
+        let mut filter = PreviewFilter::default();
+        filter.confirmed("Hello their. General Kenobi", 2);
+
+        // A word the engine keeps re-reading does not hide what follows it.
+        let mut wobble = PreviewFilter::default();
+        wobble.confirmed("its own memory, how will it load its memory.", 0);
+        assert_eq!(
+            wobble.confirmed("its own memory, how we it will load its memory and so", 0),
+            "its own memory, how we it will load its memory"
+        );
+        // Silence after a cut: the committed text stands as written.
+        assert_eq!(filter.confirmed("Hello their.", 2), "Hello their.");
+        assert_eq!(filter.confirmed("", 0), "");
     }
 
     #[test]
