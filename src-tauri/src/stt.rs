@@ -22,6 +22,10 @@ pub enum SttEngine {
 
 pub struct LoadedModel {
     pub model_id: String,
+    /// Language handed to Whisper; None = detect it from the audio, which
+    /// costs a second pass over the audio (measured: it doubles the time of
+    /// a short dictation on large-v3-turbo). Parakeet ignores it.
+    pub whisper_language: Option<String>,
     engine: SttEngine,
 }
 
@@ -47,6 +51,7 @@ impl LoadedModel {
         };
         Ok(Self {
             model_id: path.display().to_string(),
+            whisper_language: None,
             engine,
         })
     }
@@ -59,6 +64,7 @@ impl LoadedModel {
                     samples,
                     &WhisperInferenceParams {
                         initial_prompt: Some(WHISPER_INITIAL_PROMPT.to_string()),
+                        language: self.whisper_language.clone(),
                         ..Default::default()
                     },
                 )

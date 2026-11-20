@@ -1,0 +1,20 @@
+# cargo-audit policy for `npm run audit` (part of `npm run validate`).
+#
+# Every ignore needs a reason and a way out. An advisory with a fix that
+# `cargo update` can reach is never ignored — update the crate instead.
+[advisories]
+ignore = [
+    # zip 4.6.1 — six extraction advisories, all fixed in zip 9.x.
+    # Only tauri-plugin-updater depends on it, only on Windows (the macOS
+    # build does not compile it: `cargo tree --target aarch64-apple-darwin
+    # -i zip` prints nothing), and its zip major is the plugin's to raise.
+    # What it extracts is the update archive, which the plugin verifies
+    # against our minisign key first — a hostile zip has to be signed by us.
+    # Remove these when tauri-plugin-updater moves to zip >= 9.0.5.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+    "RUSTSEC-2026-0429",
+    "RUSTSEC-2026-0545",
+    "RUSTSEC-2026-0548",
+]

@@ -227,8 +227,16 @@ fn start_recording(app: &AppHandle, generation: &mut u64, tx: &mpsc::Sender<Msg>
         )
     };
 
+    // The overlay goes up BEFORE the microphone opens: opening the input
+    // device is the slow step of a start, and the pill is the user's
+    // confirmation that the hotkey landed. If the device then fails, the
+    // pill comes straight back down.
+    overlay::show_state_with_mode(app, overlay::state::RECORDING, live_mode);
+    log::info!("hotkey -> overlay shown in {:?}", t0.elapsed());
+
     if let Err(e) = state.recorder.start(device) {
         log::error!("failed to start recording: {e}");
+        overlay::hide(app);
         let _ = app.emit("pipeline-error", format!("Could not start recording: {e}"));
         return false;
     }
@@ -255,7 +263,6 @@ fn start_recording(app: &AppHandle, generation: &mut u64, tx: &mpsc::Sender<Msg>
 
     crate::sounds::play(app, crate::sounds::Cue::Start);
 
-    overlay::show_state_with_mode(app, overlay::state::RECORDING, live_mode);
     tray::set_state(app, tray::TrayState::Recording);
     state.hotkeys_set_cancel(true);
 
@@ -297,7 +304,7 @@ fn start_recording(app: &AppHandle, generation: &mut u64, tx: &mpsc::Sender<Msg>
         let _ = tx.send(Msg::AutoStop { generation: g });
     });
 
-    log::info!("hotkey -> recording overlay in {:?}", t0.elapsed());
+    log::info!("hotkey -> recording started in {:?}", t0.elapsed());
     true
 }
 

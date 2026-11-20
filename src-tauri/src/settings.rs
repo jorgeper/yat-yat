@@ -64,6 +64,10 @@ pub struct Settings {
     pub collapse_repeats: bool,
     /// Show words in the overlay while recording (SPEC3, default on).
     pub live_transcription: bool,
+    /// The language Whisper models are told to expect: "auto" (detect it
+    /// from the audio, an extra model pass on every dictation) or a
+    /// language code such as "en". Parakeet ignores it.
+    pub whisper_language: String,
     /// Visualizer effect id (SPEC6; unknown ids fall back to the default).
     pub overlay_effect: String,
     /// Overlay theme id — built-in id or `user:<file>` (SPEC6).
@@ -109,6 +113,8 @@ impl Default for Settings {
             // Default OFF since 0.1.0-alpha.10 (owner decision; supersedes
             // SPEC3 FR-L1's default-on — divergence noted in ARCHITECTURE.md).
             live_transcription: false,
+            // "auto" keeps what every earlier build did.
+            whisper_language: "auto".into(),
             overlay_effect: "classic-bars".into(),
             overlay_theme: "indigo".into(),
             focus_guard: true,
@@ -166,6 +172,15 @@ impl Settings {
         self.last_run_version = current.last_run_version.clone();
     }
 
+    /// The language to hand Whisper, or None to let it detect one. Anything
+    /// that is not a plain 2–3 letter code reads as "auto" — a hand-edited
+    /// settings file can slow dictation down but never break it.
+    pub fn whisper_language_code(&self) -> Option<String> {
+        let code = self.whisper_language.trim().to_ascii_lowercase();
+        let plain = (2..=3).contains(&code.len()) && code.chars().all(|c| c.is_ascii_lowercase());
+        plain.then_some(code)
+    }
+
     pub fn clean_options(&self) -> crate::cleanup::CleanOptions {
         crate::cleanup::CleanOptions {
             fillers: self.filler_words.clone(),
@@ -201,17 +216,37 @@ mod url {
         if authority.is_empty() {
             bail!("endpoint '{url}' has no host");
         }
-        // Bracketed IPv6 keeps its brackets; otherwise strip :port.
-        let host = if authority.starts_with('[') {
-            authority
-                .split(']')
-                .next()
-                .map(|h| format!("{h}]"))
-                .unwrap_or_default()
+        // This parser decides whether a URL is local; the HTTP client then
+        // parses the same string itself. Anything the two could read
+        // differently must be refused outright — `localhost:x@evil.com` is
+        // userinfo + a remote host to a real URL parser, and browsers treat
+        // `\` as `/`. So: no userinfo, no backslashes, no whitespace, and
+        // nothing after the host but an all-digit port.
+        if authority.contains(['@', '\\']) || authority.chars().any(char::is_whitespace) {
+            bail!("endpoint '{url}' has an authority that is not a plain host[:port]");
+        }
+        // Bracketed IPv6 keeps its brackets; otherwise split off :port.
+        let (host, rest) = if authority.starts_with('[') {
+            match authority.find(']') {
+                Some(end) => authority.split_at(end + 1),
+                None => bail!("endpoint '{url}' has an unclosed IPv6 host"),
+            }
         } else {
-            authority.split(':').next().unwrap_or("").to_string()
+            match authority.find(':') {
+                Some(colon) => authority.split_at(colon),
+                None => (authority, ""),
+            }
         };
-        Ok(Loose { host })
+        let port_ok = match rest.strip_prefix(':') {
+            Some(port) => !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()),
+            None => rest.is_empty(),
+        };
+        if !port_ok {
+            bail!("endpoint '{url}' has an invalid port");
+        }
+        Ok(Loose {
+            host: host.to_string(),
+        })
     }
 }
 
@@ -404,6 +439,66 @@ mod tests {
             "not a url",
         ] {
             assert!(validate_enhancement_endpoint(url).is_err(), "{url}");
+        }
+    }
+
+    // R39: the Whisper language setting — legacy files keep auto-detect, and
+    // only a plain language code is ever passed to the engine.
+    #[test]
+    fn r39_whisper_language_defaults_to_auto_and_fails_safe() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, r#"{"hotkey":"F19"}"#).unwrap();
+        let legacy = Settings::load(&path);
+        assert_eq!(legacy.whisper_language, "auto");
+        assert_eq!(legacy.whisper_language_code(), None);
+
+        let with = |v: &str| Settings {
+            whisper_language: v.into(),
+            ..Settings::default()
+        };
+        assert_eq!(with("en").whisper_language_code().as_deref(), Some("en"));
+        assert_eq!(with(" PT ").whisper_language_code().as_deref(), Some("pt"));
+        assert_eq!(with("haw").whisper_language_code().as_deref(), Some("haw"));
+        for junk in ["auto", "", "english", "e", "e1", "en-US", "../x"] {
+            assert_eq!(with(junk).whisper_language_code(), None, "{junk:?}");
+        }
+        // And it round-trips through disk like any UI-owned field.
+        let s = with("es");
+        s.save(&path).unwrap();
+        assert_eq!(Settings::load(&path).whisper_language, "es");
+    }
+
+    // R37: the guard must read a URL the way the HTTP client will. Each of
+    // these LOOKS local to a first-colon split but is a remote host (or
+    // nonsense) to a real URL parser — found in the 2026-11 security review.
+    #[test]
+    fn r37_endpoints_that_only_look_local_are_rejected() {
+        for url in [
+            "http://localhost:x@evil.com",
+            "http://localhost:11434@evil.com/api",
+            "http://localhost@evil.com",
+            "http://127.0.0.1:80@evil.com",
+            "http://[::1]@evil.com",
+            "http://[::1]evil.com",
+            "http://localhost\\@evil.com",
+            "http://localhost\\.evil.com",
+            "http://localhost :11434",
+            "http://localhost:11434x",
+            "http://localhost:",
+            "http://[::1",
+        ] {
+            assert!(validate_enhancement_endpoint(url).is_err(), "{url}");
+        }
+        // The strictness costs no legitimate endpoint.
+        for url in [
+            "http://localhost",
+            "http://localhost:11434/v1?x=a@b",
+            "http://127.0.0.1:1",
+            "http://[::1]",
+            "https://[::1]:8443/path",
+        ] {
+            assert!(validate_enhancement_endpoint(url).is_ok(), "{url}");
         }
     }
 }

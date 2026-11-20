@@ -209,8 +209,11 @@ impl AppState {
         // the per-model RTF estimate. Live passes run through here too, so
         // with live transcription on, the progress estimate is calibrated
         // from the current session before the final transcription starts.
+        let language = self.settings.read().unwrap().whisper_language_code();
+        let model = engine.as_mut().unwrap();
+        model.whisper_language = language;
         let t0 = std::time::Instant::now();
-        let result = engine.as_mut().unwrap().transcribe(samples);
+        let result = model.transcribe(samples);
         drop(engine);
         if result.is_ok() {
             self.observe_rtf(

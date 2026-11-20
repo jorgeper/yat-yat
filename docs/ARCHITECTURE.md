@@ -421,6 +421,39 @@ E21a–E21b). The definitive structural fix — Developer ID signing +
 notarization, whose TCC grant survives updates — is out of scope here and
 tracked for a future spec.
 
+## Hardening and speed pass (post-SPEC16)
+
+Owner-requested directly after a security and leanness review, without a
+SPEC/GOAL pair (2026-11-19).
+
+- **Localhost guard reads URLs like the client does** (R37). The check
+  took the host as "text before the first `:`", so
+  `http://localhost:x@evil.com` passed while the HTTP client would connect
+  to `evil.com`. The authority must now be a plain `host[:digits]`: no
+  userinfo, backslashes or whitespace.
+- **The enhancement client never follows redirects** (R38). A redirect
+  from whatever answers on localhost would have re-sent the transcript to
+  any host.
+- **Advisory gate**: `npm run audit` (`npm audit` + `cargo audit`), run by
+  the release workflow before `validate`. It is not part of
+  `npm run validate` because it needs the network for the advisory
+  database, and the harness's only sanctioned network is the Whisper-tiny
+  cache. Exceptions, each with its reason, are in
+  `src-tauri/.cargo/audit.toml` (currently: `zip`, Windows-only via the
+  updater plugin).
+- **Whisper language setting** (`whisper_language`, R39/E23; default
+  `auto`). With `auto` Whisper spends an extra pass detecting the language;
+  naming it measured 1.62 s → 0.83 s on a 2.5 s clip and 2.73 s → 1.94 s
+  on 35 s (large-v3-turbo q5, M5), same text. Parakeet ignores it.
+- **Tried and rejected: shrinking Whisper's audio window** (`audio_ctx`)
+  for short clips. Fast in a synthetic benchmark, but on real speech it
+  changed most words on clips under 8 s and often ran slower (decoder
+  fallbacks). Not shipped.
+- **Overlay before microphone**: `start_recording` shows the pill before
+  opening the input device and hides it again if the device fails.
+- **Release build**: `[profile.release.build-override] strip = false` —
+  macOS 27 refuses to load stripped proc-macro dylibs.
+
 ## Design notes
 
 - **One pipeline thread** serializes Idle→Recording→Processing, so double

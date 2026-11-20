@@ -11,6 +11,29 @@ function formatBytes(bytes: number): string {
   return `${Math.round(bytes / 1_000_000)} MB`;
 }
 
+// Languages offered for Whisper. Naming one skips the detection pass Whisper
+// otherwise runs on every dictation; "auto" keeps detecting.
+export const WHISPER_LANGUAGES: [code: string, name: string][] = [
+  ["auto", "Detect automatically"],
+  ["en", "English"],
+  ["es", "Spanish"],
+  ["pt", "Portuguese"],
+  ["fr", "French"],
+  ["de", "German"],
+  ["it", "Italian"],
+  ["nl", "Dutch"],
+  ["sv", "Swedish"],
+  ["pl", "Polish"],
+  ["tr", "Turkish"],
+  ["ru", "Russian"],
+  ["uk", "Ukrainian"],
+  ["ar", "Arabic"],
+  ["hi", "Hindi"],
+  ["zh", "Chinese"],
+  ["ja", "Japanese"],
+  ["ko", "Korean"],
+];
+
 interface RowState {
   progress: number | null;
   verifying: boolean;
@@ -19,10 +42,12 @@ interface RowState {
 
 export default function ModelsSection({
   settings,
+  save,
   models,
   refreshModels,
 }: {
   settings: Settings;
+  save: (s: Settings) => Promise<void>;
   models: ModelStatus[];
   refreshModels: () => void;
 }) {
@@ -175,6 +200,33 @@ export default function ModelsSection({
             </div>
           );
         })}
+      </div>
+      <div className="section-title">Whisper</div>
+      <div className="card">
+        <div className="row">
+          <div>
+            <div className="row-label">Spoken language</div>
+            <div className="row-sub">
+              Whisper models only. Choosing your language makes short dictations about twice as
+              fast, because Whisper no longer has to work it out first. Parakeet ignores this.
+            </div>
+          </div>
+          <select
+            data-testid="whisper-language"
+            value={
+              WHISPER_LANGUAGES.some(([code]) => code === settings.whisper_language)
+                ? settings.whisper_language
+                : "auto"
+            }
+            onChange={(e) => save({ ...settings, whisper_language: e.target.value })}
+          >
+            {WHISPER_LANGUAGES.map(([code, name]) => (
+              <option key={code} value={code}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       <div className="section-title">Disk</div>
       <div className="card">

@@ -31,6 +31,9 @@ enum Command {
         /// Print the raw transcript without the cleanup pass.
         #[arg(long)]
         raw: bool,
+        /// Whisper only: the spoken language ("en", …) instead of detecting it.
+        #[arg(long)]
+        language: Option<String>,
         /// 16 kHz (or any rate) WAV file to transcribe.
         wav: PathBuf,
     },
@@ -55,6 +58,7 @@ fn main() -> anyhow::Result<()> {
             model_path,
             engine,
             raw,
+            language,
             wav,
         }) => {
             let family = match engine.as_str() {
@@ -66,6 +70,10 @@ fn main() -> anyhow::Result<()> {
             let t0 = std::time::Instant::now();
             let mut model = yatyat_lib::stt::LoadedModel::load_path(family, &model_path)?;
             let load_time = t0.elapsed();
+            model.whisper_language = language;
+            // One untimed pass first: the first inference after a load pays
+            // one-off GPU setup that the warm app never pays again.
+            model.transcribe(&samples[..samples.len().min(16_000)])?;
             let t1 = std::time::Instant::now();
             let text = model.transcribe(&samples)?;
             let infer_time = t1.elapsed();

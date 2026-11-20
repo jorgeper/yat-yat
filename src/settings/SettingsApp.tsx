@@ -283,7 +283,12 @@ export default function SettingsApp() {
           <HotkeySection settings={settings} save={save} startSetup={startSetup} />
         )}
         {section === "models" && (
-          <ModelsSection settings={settings} models={models} refreshModels={refreshModels} />
+          <ModelsSection
+            settings={settings}
+            save={save}
+            models={models}
+            refreshModels={refreshModels}
+          />
         )}
         {section === "cleanup" && <CleanupSection settings={settings} save={save} />}
       </main>
