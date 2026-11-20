@@ -400,10 +400,11 @@ fn chunk_loop(
     let mut preview_due = Instant::now();
     let mut previewed_to = 0usize;
     let mut filter = crate::chunking::PreviewFilter::default();
+    let poll = if live { crate::live::PREVIEW_POLL } else { CHUNK_POLL };
     loop {
         // Wait out the poll interval — but a stop wakes us at once, so the
         // stop path never waits on this sleep.
-        match wake.recv_timeout(CHUNK_POLL) {
+        match wake.recv_timeout(poll) {
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             _ => return, // stopped, or the session is gone
         }

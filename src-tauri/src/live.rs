@@ -54,7 +54,11 @@ impl LiveInterval {
 
 /// Shortest rest between two live preview passes on the chunked path
 /// (pipeline::chunk_loop).
-pub const PREVIEW_MIN_GAP: Duration = Duration::from_millis(400);
+pub const PREVIEW_MIN_GAP: Duration = Duration::from_millis(150);
+/// How often the chunker looks at the recording in live mode (it polls
+/// every `pipeline::CHUNK_POLL` otherwise): the wait before a due preview
+/// starts is part of how far the words on screen trail the voice.
+pub const PREVIEW_POLL: Duration = Duration::from_millis(100);
 
 /// How long the chunked live path rests after a preview pass that took
 /// `pass`: at least [`PREVIEW_MIN_GAP`], and never less than the pass
