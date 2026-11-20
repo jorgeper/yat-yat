@@ -160,15 +160,26 @@ impl AppState {
             .get(&active_id)
             .ok_or_else(|| anyhow::anyhow!("unknown model '{active_id}'"))?;
 
-        let needs_load = engine.as_ref().map(|m| m.model_id != active_id).unwrap_or(true);
+        // The accelerator is fixed when a model loads, so a changed Core ML
+        // setting needs a reload just like a changed model.
+        let coreml = self.settings.read().unwrap().parakeet_coreml
+            && entry.engine == crate::registry::EngineFamily::Parakeet;
+        let needs_load = engine
+            .as_ref()
+            .map(|m| m.model_id != active_id || m.coreml != coreml)
+            .unwrap_or(true);
         if needs_load {
             // Drop the old engine first: avoids 2x peak RAM on big models.
             *engine = None;
             let _ = app.emit("model-state-changed", "loading_started");
             let t0 = std::time::Instant::now();
-            match LoadedModel::load(entry, &self.data_dir) {
+            match LoadedModel::load(entry, &self.data_dir, coreml) {
                 Ok(loaded) => {
-                    log::info!("loaded model {active_id} in {:?}", t0.elapsed());
+                    log::info!(
+                        "loaded model {active_id} in {:?}{}",
+                        t0.elapsed(),
+                        if coreml { " (Core ML)" } else { "" }
+                    );
                     let _ = app.emit("model-state-changed", "loading_completed");
                     *engine = Some(loaded);
                 }

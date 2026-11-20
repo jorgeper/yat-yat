@@ -46,11 +46,16 @@ pub fn set_settings(
     crate::settings::validate_enhancement_endpoint(&settings.enhancement.endpoint).map_err(err)?;
     crate::hotkey::validate_binding(&settings.hotkey).map_err(err)?;
 
-    let (old_hotkey, old_autostart) = {
+    let (old_hotkey, old_autostart, old_coreml) = {
         let current = state.settings.read().unwrap();
         settings.preserve_server_owned(&current);
-        (current.hotkey.clone(), current.launch_at_login)
+        (
+            current.hotkey.clone(),
+            current.launch_at_login,
+            current.parakeet_coreml,
+        )
     };
+    let coreml_changed = settings.parakeet_coreml != old_coreml;
 
     // Apply side effects before persisting.
     if settings.hotkey != old_hotkey {
@@ -77,6 +82,22 @@ pub fn set_settings(
         current.save(&state.settings_path()).map_err(err)?;
     }
     tray::refresh_menu(&app, tray::TrayState::Idle);
+    if coreml_changed {
+        // The engine reloads for the new accelerator on its next use; start
+        // that now, in the background, so the (multi-second, with Core ML)
+        // load is not paid by the next dictation.
+        let app = app.clone();
+        std::thread::Builder::new()
+            .name("engine-prewarm".into())
+            .spawn(move || {
+                use tauri::Manager;
+                let state = app.state::<AppState>();
+                if let Err(e) = state.ensure_loaded(&app) {
+                    log::warn!("accelerator-switch pre-warm failed (next dictation retries): {e}");
+                }
+            })
+            .ok();
+    }
     Ok(())
 }
 

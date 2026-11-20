@@ -83,7 +83,7 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "a3122e
 tauri-plugin-macos-permissions = "2"
 objc2 = "0.6"
 objc2-foundation = "0.3"
-transcribe-rs = { version = "=0.3.11", features = ["onnx", "whisper-cpp", "whisper-metal"] }
+transcribe-rs = { version = "=0.3.11", features = ["onnx", "whisper-cpp", "whisper-metal", "ort-coreml"] }
 
 [dev-dependencies]
 tempfile = "3"

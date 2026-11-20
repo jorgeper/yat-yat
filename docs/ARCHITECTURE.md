@@ -454,6 +454,33 @@ SPEC/GOAL pair (2026-11-19).
 - **Release build**: `[profile.release.build-override] strip = false` —
   macOS 27 refuses to load stripped proc-macro dylibs.
 
+## Core ML for Parakeet: experimental, off by default (post-SPEC16)
+
+Owner-requested as a setting to try (2026-11-19). `parakeet_coreml`
+(default false; R40, E24) loads Parakeet through ONNX Runtime's Core ML
+provider instead of the CPU. Every load states its accelerator
+(`stt::parakeet_accelerator`): with `ort-coreml` compiled in, the
+library's own "auto" would otherwise select Core ML silently. A changed
+setting reloads the engine in the background.
+
+Measured through the CLI (`transcribe --coreml`, M5, int8 model, second
+pass so one-off setup is excluded):
+
+| Audio | CPU | Core ML | Peak memory CPU → Core ML |
+|---|---|---|---|
+| 2.5 s | 0.09 s | 0.17 s | 1.9 → 2.3 GB |
+| 10.7 s | 0.29 s | 0.47 s | 2.0 → 4.2 GB |
+| 35 s | 0.92 s | 1.62 s | 2.3 → 11.3 GB |
+| 70 s | 2.08 s | 39.1 s | 2.7 → 12.8 GB |
+
+Model load: 0.45 s → 3.5 s. The int8 model's quantized operators are not
+ones Core ML runs, so the graph is split between Core ML and the CPU and
+pays for the hand-offs. The uncompressed (FP32, 2.4 GB) model is slower
+than int8 on the CPU (1.43 s vs 0.77 s for 30 s) and fails to load under
+Core ML through transcribe-rs (it loads the model from memory, and the
+provider then cannot find the external weights file). A real Neural
+Engine path would need a native Core ML model, not this provider.
+
 ## Design notes
 
 - **One pipeline thread** serializes Idle→Recording→Processing, so double

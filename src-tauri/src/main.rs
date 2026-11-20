@@ -34,6 +34,9 @@ enum Command {
         /// Whisper only: the spoken language ("en", …) instead of detecting it.
         #[arg(long)]
         language: Option<String>,
+        /// Parakeet on macOS: run through Core ML instead of the CPU.
+        #[arg(long)]
+        coreml: bool,
         /// 16 kHz (or any rate) WAV file to transcribe.
         wav: PathBuf,
     },
@@ -59,6 +62,7 @@ fn main() -> anyhow::Result<()> {
             engine,
             raw,
             language,
+            coreml,
             wav,
         }) => {
             let family = match engine.as_str() {
@@ -68,7 +72,7 @@ fn main() -> anyhow::Result<()> {
             };
             let samples = yatyat_lib::stt::read_wav_16k_mono(&wav)?;
             let t0 = std::time::Instant::now();
-            let mut model = yatyat_lib::stt::LoadedModel::load_path(family, &model_path)?;
+            let mut model = yatyat_lib::stt::LoadedModel::load_path(family, &model_path, coreml)?;
             let load_time = t0.elapsed();
             model.whisper_language = language;
             // One untimed pass first: the first inference after a load pays

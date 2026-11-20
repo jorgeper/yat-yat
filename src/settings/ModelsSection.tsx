@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { api, listen } from "../ipc/api";
 import type { DownloadProgress, ModelStatus, Settings } from "../ipc/types";
+import { Toggle } from "./SettingsApp";
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
@@ -226,6 +227,24 @@ export default function ModelsSection({
               </option>
             ))}
           </select>
+        </div>
+      </div>
+      <div className="section-title">Experimental</div>
+      <div className="card">
+        <div className="row">
+          <div>
+            <div className="row-label">Run Parakeet on Core ML</div>
+            <div className="row-sub">
+              Uses the Mac's GPU and Neural Engine instead of the processor. In our measurements
+              this is slower, takes a few seconds longer to load, and uses much more memory — it
+              is here to try, not recommended. Mac only; Whisper is unaffected.
+            </div>
+          </div>
+          <Toggle
+            checked={settings.parakeet_coreml}
+            testId="parakeet-coreml"
+            onChange={(v) => save({ ...settings, parakeet_coreml: v })}
+          />
         </div>
       </div>
       <div className="section-title">Disk</div>
