@@ -74,7 +74,7 @@ impl LoadedModel {
                 .text,
             SttEngine::Parakeet(engine) => engine
                 .transcribe_with(
-                    samples,
+                    &with_noise_floor(samples),
                     &ParakeetParams {
                         timestamp_granularity: Some(TimestampGranularity::Segment),
                         ..Default::default()
@@ -100,7 +100,7 @@ impl LoadedModel {
         };
         let result = engine
             .transcribe_with(
-                samples,
+                &with_noise_floor(samples),
                 &ParakeetParams {
                     timestamp_granularity: Some(TimestampGranularity::Word),
                     ..Default::default()
@@ -120,6 +120,38 @@ impl LoadedModel {
                 .collect(),
         ))
     }
+}
+
+/// Peak of the noise [`with_noise_floor`] adds, as a fraction of full scale
+/// (about -52 dB; its RMS is about -60 dB, well under a quiet room).
+const NOISE_FLOOR_PEAK: f32 = 0.0025;
+
+/// The audio with a faint, fixed noise floor under it, for Parakeet.
+///
+/// The quantized (int8) Parakeet encoder skips whole sentences on some clean
+/// recordings, and which ones it skips changes with the length of audio it is
+/// given. Measured on a 20 s dictation: 45 of 56 words for the whole
+/// recording, 0 for its first 10 s, 15 for its first 18 s. With this noise
+/// added the same passes return 56, 30 and 56 — the same as the
+/// full-precision weights. Noise a third as strong did not help; noise ten
+/// times stronger did no harm.
+///
+/// The noise is generated from a fixed seed, so a recording always
+/// transcribes the same way.
+pub fn with_noise_floor(samples: &[f32]) -> Vec<f32> {
+    let mut state: u32 = 0x9E37_79B9;
+    let mut unit = move || {
+        // xorshift32, mapped to [0, 1).
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        (state >> 8) as f32 / (1u32 << 24) as f32
+    };
+    samples
+        .iter()
+        // The difference of two uniform values is triangular around zero.
+        .map(|&s| s + (unit() - unit()) * NOISE_FLOOR_PEAK)
+        .collect()
 }
 
 /// During silence, Whisper hallucinates its own initial prompt back —
@@ -167,6 +199,27 @@ pub fn strip_prompt_echo(text: &str) -> String {
 #[cfg(test)]
 mod echo_tests {
     use super::*;
+
+    // R45: the Parakeet noise floor.
+    #[test]
+    fn r45_noise_floor_is_faint_fixed_and_fills_silence() {
+        let silence = vec![0.0f32; 16_000];
+        let a = with_noise_floor(&silence);
+        assert_eq!(a.len(), silence.len());
+        // Faint: never above the stated peak, and about -60 dB RMS.
+        assert!(a.iter().all(|s| s.abs() <= NOISE_FLOOR_PEAK));
+        let rms = (a.iter().map(|s| s * s).sum::<f32>() / a.len() as f32).sqrt();
+        assert!((0.0008..0.0013).contains(&rms), "rms {rms}");
+        // Fills digital silence, without a DC offset.
+        assert!(a.iter().filter(|s| **s != 0.0).count() > 15_900);
+        assert!((a.iter().sum::<f32>() / a.len() as f32).abs() < 1e-4);
+        // Fixed: the same recording always gets the same noise.
+        assert_eq!(a, with_noise_floor(&silence));
+        // Speech passes through with only the noise added.
+        let speech: Vec<f32> = (0..1_600).map(|i| (i as f32 * 0.05).sin() * 0.3).collect();
+        let b = with_noise_floor(&speech);
+        assert!(speech.iter().zip(&b).all(|(x, y)| (x - y).abs() <= NOISE_FLOOR_PEAK));
+    }
 
     // R16: the prompt-echo filter (silence hallucination guard).
     #[test]

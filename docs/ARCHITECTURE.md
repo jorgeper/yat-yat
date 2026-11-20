@@ -484,6 +484,26 @@ pass) and one comma became a period at a 1.2 s
 pause. One real recording is a thin sample — treat join quality as
 field-unproven.
 
+## Parakeet noise floor (post-SPEC16)
+
+Every Parakeet pass reads the audio through `stt::with_noise_floor`, which
+adds a faint fixed-seed noise (peak 0.0025 of full scale, about -60 dB RMS).
+
+Why: the quantized (int8) encoder skips whole sentences on some clean
+recordings, and what it skips changes with the length of audio it is given.
+On one 20 s dictation (56 words spoken) it returned 45 words for the whole
+recording, 0 for the first 10 s and 15 for the first 18 s. Whole-recording
+transcription lost a fifth of the text; chunked transcription, which runs
+many shorter passes, delivered 6 words. With the noise floor the same passes
+return 56, 30 and 56 words and the chunked path returns 56 — the same as
+the full-precision weights give without it.
+
+Measured on the failing recording and five others. On the five others the
+whole-recording word count moved by at most one word (four were unchanged
+word for word) and the chunked count by at most two. A third of the noise did not fix the failing recording; ten
+times as much did no harm. Why the encoder fails on that recording is not
+established — the fix is empirical. Test: R45.
+
 ## Design notes
 
 - **One pipeline thread** serializes Idle→Recording→Processing, so double
