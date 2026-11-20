@@ -31,6 +31,11 @@ enum Command {
         /// Print the raw transcript without the cleanup pass.
         #[arg(long)]
         raw: bool,
+        /// Replay chunked transcription (chunking.rs) over the file: cut at
+        /// pauses as the app does while recording, transcribe each chunk, and
+        /// report the tail — the only part the app's stop path waits for.
+        #[arg(long)]
+        chunked: bool,
         /// 16 kHz (or any rate) WAV file to transcribe.
         wav: PathBuf,
     },
@@ -55,6 +60,7 @@ fn main() -> anyhow::Result<()> {
             model_path,
             engine,
             raw,
+            chunked,
             wav,
         }) => {
             let family = match engine.as_str() {
@@ -66,13 +72,62 @@ fn main() -> anyhow::Result<()> {
             let t0 = std::time::Instant::now();
             let mut model = yatyat_lib::stt::LoadedModel::load_path(family, &model_path)?;
             let load_time = t0.elapsed();
-            let t1 = std::time::Instant::now();
-            let text = model.transcribe(&samples)?;
-            let infer_time = t1.elapsed();
-            eprintln!(
-                "model load: {load_time:?}, inference: {infer_time:?}, audio: {:.1}s",
-                samples.len() as f64 / 16_000.0
-            );
+            let text = if chunked {
+                use yatyat_lib::chunking::{
+                    context_start, stitch, to_absolute, words_text, CONTEXT_AFTER_SECS,
+                };
+                let after = (CONTEXT_AFTER_SECS * 16_000.0) as usize;
+                let no_words = || anyhow::anyhow!("--chunked needs word timestamps (parakeet)");
+                let cuts = yatyat_lib::chunking::plan_cuts(&samples, 0.25);
+                let mut transcript = Vec::new();
+                let mut from = 0;
+                let t1 = std::time::Instant::now();
+                for &cut in &cuts {
+                    let start = context_start(from);
+                    let words = model
+                        .transcribe_words(&samples[start..cut + after])?
+                        .ok_or_else(no_words)?;
+                    stitch(&mut transcript, to_absolute(words, start), from as f32 / 16_000.0);
+                    from = cut;
+                }
+                let chunk_time = t1.elapsed();
+                let t2 = std::time::Instant::now();
+                let whole = if cuts.is_empty() {
+                    Some(model.transcribe(&samples)?)
+                } else {
+                    if from < samples.len() {
+                        let start = context_start(from);
+                        let mut tail = samples[start..].to_vec();
+                        if tail.len() < yatyat_lib::audio::MIN_SAMPLES {
+                            tail.resize(yatyat_lib::audio::MIN_SAMPLES, 0.0);
+                        }
+                        let words = model.transcribe_words(&tail)?.ok_or_else(no_words)?;
+                        stitch(&mut transcript, to_absolute(words, start), from as f32 / 16_000.0);
+                    }
+                    None
+                };
+                let tail_time = t2.elapsed();
+                eprintln!(
+                    "model load: {load_time:?}, chunks: {} in {chunk_time:?} (during recording), \
+                     tail: {:.1}s in {tail_time:?} (after stop), audio: {:.1}s, cuts at {:?}s",
+                    cuts.len(),
+                    (samples.len() - from) as f64 / 16_000.0,
+                    samples.len() as f64 / 16_000.0,
+                    cuts.iter()
+                        .map(|&c| (c as f64 / 1_600.0).round() / 10.0)
+                        .collect::<Vec<_>>()
+                );
+                whole.unwrap_or_else(|| words_text(&transcript))
+            } else {
+                let t1 = std::time::Instant::now();
+                let text = model.transcribe(&samples)?;
+                let infer_time = t1.elapsed();
+                eprintln!(
+                    "model load: {load_time:?}, inference: {infer_time:?}, audio: {:.1}s",
+                    samples.len() as f64 / 16_000.0
+                );
+                text
+            };
             if raw {
                 println!("{text}");
             } else {

@@ -20,6 +20,14 @@ pub enum SttEngine {
     Parakeet(ParakeetModel),
 }
 
+/// One transcribed word with its position in the audio, in seconds.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Word {
+    pub start: f32,
+    pub end: f32,
+    pub text: String,
+}
+
 pub struct LoadedModel {
     pub model_id: String,
     engine: SttEngine,
@@ -78,6 +86,39 @@ impl LoadedModel {
         // Engine artifact, filtered at the engine boundary so EVERY consumer
         // (live passes, the stop path, Retry, the CLI) is protected.
         Ok(strip_prompt_echo(text.trim()))
+    }
+}
+
+impl LoadedModel {
+    /// Transcribe to words with timestamps — what chunked transcription
+    /// needs to keep only the words inside a chunk when the engine was also
+    /// given context audio on either side (chunking.rs). Parakeet only;
+    /// None for engines without word timing here.
+    pub fn transcribe_words(&mut self, samples: &[f32]) -> Result<Option<Vec<Word>>> {
+        let SttEngine::Parakeet(engine) = &mut self.engine else {
+            return Ok(None);
+        };
+        let result = engine
+            .transcribe_with(
+                samples,
+                &ParakeetParams {
+                    timestamp_granularity: Some(TimestampGranularity::Word),
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| anyhow::anyhow!("parakeet inference: {e}"))?;
+        Ok(Some(
+            result
+                .segments
+                .unwrap_or_default()
+                .into_iter()
+                .map(|s| Word {
+                    start: s.start,
+                    end: s.end,
+                    text: s.text,
+                })
+                .collect(),
+        ))
     }
 }
 

@@ -1,6 +1,7 @@
 //! Yat Yat — fast, fully-local voice dictation (SPEC.md).
 
 pub mod audio;
+pub mod chunking;
 pub mod cleanup;
 pub mod commands;
 pub mod downloader;
