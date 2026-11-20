@@ -61,6 +61,11 @@ jobs:
           if [ "$got" != "$v" ]; then echo "::error::src-tauri/Cargo.toml has $got, releasing $v"; fail=1; fi
           exit $fail
       - run: npm ci
+      # Known-vulnerability gate: a release is not cut on top of a crate or
+      # package with a published advisory. Policy and the reasoned
+      # exceptions live in src-tauri/.cargo/audit.toml.
+      - run: cargo install cargo-audit --locked
+      - run: npm run audit
       - run: npx playwright install chromium
       - run: npm run validate
       # Playwright traces for any e2e failure — CI-only flakes are

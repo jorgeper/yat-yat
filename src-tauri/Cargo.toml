@@ -92,3 +92,10 @@ tempfile = "3"
 lto = true
 codegen-units = 1
 strip = true
+
+# Proc-macros and build scripts run on the build machine and never ship, so
+# stripping them saves nothing — and on macOS 27 the stripped proc-macro
+# dylibs are rejected by the loader ("mis-aligned LINKEDIT string pool"),
+# which fails the release build with "can't find crate for `tauri_macros`".
+[profile.release.build-override]
+strip = false

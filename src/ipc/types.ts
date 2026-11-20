@@ -26,6 +26,8 @@ export interface Settings {
   keep_history: boolean;
   collapse_repeats: boolean;
   live_transcription: boolean;
+  // "auto" or a Whisper language code ("en", "es", …); Parakeet ignores it.
+  whisper_language: string;
   overlay_effect: string;
   overlay_theme: string;
   focus_guard: boolean;
@@ -153,6 +155,7 @@ export function defaultSettings(): Settings {
     // Mirrors settings.rs: default OFF since 0.1.0-alpha.10 (supersedes
     // SPEC3 FR-L1 — see the ARCHITECTURE.md divergence note).
     live_transcription: false,
+    whisper_language: "auto",
     overlay_effect: "classic-bars",
     overlay_theme: "indigo",
     focus_guard: true,

@@ -63,6 +63,17 @@ string syntax bypasses url() checks — found and fixed in this audit), and
 size-capped (64 KB) and count-capped. CSS cannot invoke IPC; combined with
 the CSP, a hostile theme file's worst case is looking ugly.
 
+## 2026-11 review addendum
+
+Two holes in the localhost-only guarantee for enhancement were found and
+closed: an endpoint such as `http://localhost:x@evil.com` passed the check
+(the part before `@` is a username; the real host follows it), and the
+HTTP client followed redirects, so a local process could forward the
+request elsewhere. Both needed the user to enter a hostile endpoint or to
+run a hostile local server, and enhancement is off by default. Tests R37
+and R38 pin the fixes. `npm run audit` now gates releases on published
+advisories for the app's dependencies.
+
 ## Trust notes (judgment calls, documented)
 
 - **Model hosts**: Whisper models come from the official `ggerganov/

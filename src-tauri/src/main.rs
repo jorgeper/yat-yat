@@ -41,6 +41,9 @@ enum Command {
         /// so far) against the chunked way (read only since the last cut).
         #[arg(long)]
         live: bool,
+        /// Whisper only: the spoken language ("en", …) instead of detecting it.
+        #[arg(long)]
+        language: Option<String>,
         /// Parakeet only: the folder holds the full-precision (fp32) files.
         #[arg(long)]
         full_precision: bool,
@@ -70,6 +73,7 @@ fn main() -> anyhow::Result<()> {
             raw,
             chunked,
             live,
+            language,
             full_precision,
             wav,
         }) => {
@@ -90,6 +94,10 @@ fn main() -> anyhow::Result<()> {
                 },
             )?;
             let load_time = t0.elapsed();
+            model.whisper_language = language;
+            // One untimed pass first: the first inference after a load pays
+            // one-off GPU setup that the warm app never pays again.
+            model.transcribe(&samples[..samples.len().min(16_000)])?;
             if live {
                 // Replay what the app's chunker does in live mode, in audio
                 // time: poll every 250 ms, commit a chunk when a cut is
