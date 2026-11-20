@@ -568,19 +568,30 @@ mod tests {
     fn r22_drain_quiet_channel_returns_within_quiet_window() {
         // Sender still alive but silent: the quiet window, not the old fixed
         // 60 ms sleep, decides.
+        //
+        // Best of five attempts: a loaded machine can stall any single wait
+        // (a 15 ms wait took 135 ms on a CI runner), which says nothing
+        // about drain_pending. One attempt under the limit shows the quiet
+        // window, not the cap, ends the drain.
         let (tx, rx) = mpsc::channel::<Vec<f32>>();
-        let t0 = std::time::Instant::now();
-        let chunks = drain_pending(
-            &rx,
-            std::time::Duration::from_millis(15),
-            std::time::Duration::from_millis(60),
-        );
-        let elapsed = t0.elapsed();
+        let mut fastest = std::time::Duration::MAX;
+        for _ in 0..5 {
+            let t0 = std::time::Instant::now();
+            let chunks = drain_pending(
+                &rx,
+                std::time::Duration::from_millis(15),
+                std::time::Duration::from_millis(60),
+            );
+            fastest = fastest.min(t0.elapsed());
+            assert!(chunks.is_empty());
+            if fastest < std::time::Duration::from_millis(45) {
+                break;
+            }
+        }
         drop(tx);
-        assert!(chunks.is_empty());
         assert!(
-            elapsed < std::time::Duration::from_millis(45),
-            "quiet channel must return well under the 60 ms cap, took {elapsed:?}"
+            fastest < std::time::Duration::from_millis(45),
+            "quiet channel must return well under the 60 ms cap, fastest of 5 took {fastest:?}"
         );
     }
 
