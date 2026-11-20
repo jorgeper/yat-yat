@@ -59,8 +59,8 @@ ggml conversions). See docs/license.md.
 | atomic-waker | 1.1.2 | Apache-2.0 OR MIT |
 | auto-launch | 0.5.0 | MIT |
 | autocfg | 1.5.1 | Apache-2.0 OR MIT |
-| aws-lc-rs | 1.17.3 | ISC AND (Apache-2.0 OR ISC) |
-| aws-lc-sys | 0.43.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) |
+| aws-lc-rs | 1.19.0 | ISC AND (Apache-2.0 OR ISC) |
+| aws-lc-sys | 0.47.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) |
 | base64 | 0.21.7 | MIT OR Apache-2.0 |
 | base64 | 0.22.1 | MIT OR Apache-2.0 |
 | base64ct | 1.8.3 | Apache-2.0 OR MIT |
@@ -402,8 +402,8 @@ ggml conversions). See docs/license.md.
 | quick-error | 2.0.1 | MIT/Apache-2.0 |
 | quick-xml | 0.41.0 | MIT |
 | quinn | 0.11.11 | MIT OR Apache-2.0 |
-| quinn-proto | 0.11.16 | MIT OR Apache-2.0 |
-| quinn-udp | 0.5.15 | MIT OR Apache-2.0 |
+| quinn-proto | 0.11.19 | MIT OR Apache-2.0 |
+| quinn-udp | 0.5.16 | MIT OR Apache-2.0 |
 | quote | 1.0.46 | MIT OR Apache-2.0 |
 | r-efi | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | r-efi | 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
@@ -431,13 +431,13 @@ ggml conversions). See docs/license.md.
 | rustc_version | 0.4.1 | MIT OR Apache-2.0 |
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT |
 | rustfft | 6.4.1 | MIT OR Apache-2.0 |
-| rustix | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| rustls | 0.23.41 | Apache-2.0 OR ISC OR MIT |
+| rustix | 1.1.6 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| rustls | 0.23.46 | Apache-2.0 OR ISC OR MIT |
 | rustls-native-certs | 0.8.4 | Apache-2.0 OR ISC OR MIT |
 | rustls-pki-types | 1.15.0 | MIT OR Apache-2.0 |
 | rustls-platform-verifier | 0.7.0 | MIT OR Apache-2.0 |
 | rustls-platform-verifier-android | 0.1.1 | MIT OR Apache-2.0 |
-| rustls-webpki | 0.103.13 | ISC |
+| rustls-webpki | 0.103.17 | ISC |
 | rustversion | 1.0.23 | MIT OR Apache-2.0 |
 | same-file | 1.0.6 | Unlicense/MIT |
 | schannel | 0.1.29 | MIT |
@@ -527,7 +527,7 @@ ggml conversions). See docs/license.md.
 | tinystr | 0.8.3 | Unicode-3.0 |
 | tinyvec | 1.11.0 | Zlib OR Apache-2.0 OR MIT |
 | tinyvec_macros | 0.1.1 | MIT OR Apache-2.0 OR Zlib |
-| tokio | 1.52.3 | MIT |
+| tokio | 1.54.1 | MIT |
 | tokio-macros | 2.7.0 | MIT |
 | tokio-rustls | 0.26.4 | MIT OR Apache-2.0 |
 | tokio-util | 0.7.18 | MIT |
@@ -592,7 +592,7 @@ ggml conversions). See docs/license.md.
 | web-time | 1.1.0 | MIT OR Apache-2.0 |
 | webkit2gtk | 2.0.2 | MIT |
 | webkit2gtk-sys | 2.0.2 | MIT |
-| webpki-root-certs | 1.0.8 | CDLA-Permissive-2.0 |
+| webpki-root-certs | 1.0.12 | CDLA-Permissive-2.0 |
 | webview2-com | 0.38.2 | MIT |
 | webview2-com-macros | 0.8.1 | MIT |
 | webview2-com-sys | 0.38.2 | MIT |
@@ -634,7 +634,6 @@ ggml conversions). See docs/license.md.
 | windows-core | 0.54.0 | MIT OR Apache-2.0 |
 | windows-core | 0.58.0 | MIT OR Apache-2.0 |
 | windows-core | 0.61.2 | MIT OR Apache-2.0 |
-| windows-core | 0.62.2 | MIT OR Apache-2.0 |
 | windows-future | 0.2.1 | MIT OR Apache-2.0 |
 | windows-implement | 0.58.0 | MIT OR Apache-2.0 |
 | windows-implement | 0.60.2 | MIT OR Apache-2.0 |
@@ -646,10 +645,8 @@ ggml conversions). See docs/license.md.
 | windows-result | 0.1.2 | MIT OR Apache-2.0 |
 | windows-result | 0.2.0 | MIT OR Apache-2.0 |
 | windows-result | 0.3.4 | MIT OR Apache-2.0 |
-| windows-result | 0.4.1 | MIT OR Apache-2.0 |
 | windows-strings | 0.1.0 | MIT OR Apache-2.0 |
 | windows-strings | 0.4.2 | MIT OR Apache-2.0 |
-| windows-strings | 0.5.1 | MIT OR Apache-2.0 |
 | windows-sys | 0.45.0 | MIT OR Apache-2.0 |
 | windows-sys | 0.52.0 | MIT OR Apache-2.0 |
 | windows-sys | 0.59.0 | MIT OR Apache-2.0 |
