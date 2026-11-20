@@ -32,6 +32,24 @@ pub enum DownloadKind {
     Files,
 }
 
+/// Which weights a Parakeet model's files hold. The engine loads different
+/// file names for each, so the catalog has to say.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Precision {
+    /// 8-bit quantized weights: a quarter of the size, faster on a CPU.
+    #[default]
+    Int8,
+    /// The weights as trained (32-bit floats).
+    Fp32,
+}
+
+impl Precision {
+    fn is_default(&self) -> bool {
+        *self == Precision::Int8
+    }
+}
+
 /// One file of a [`DownloadKind::Files`] model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelFile {
@@ -60,6 +78,9 @@ pub struct ModelEntry {
     /// Filename to store (File kind) or the directory member holding the model
     /// root after extraction (Archive kind, "" = archive root).
     pub filename: String,
+    /// Parakeet only: the weights these files hold (default int8).
+    #[serde(default, skip_serializing_if = "Precision::is_default")]
+    pub precision: Precision,
     /// The files of a Files-kind model; empty for the other kinds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<ModelFile>,
@@ -332,6 +353,39 @@ mod tests {
         // Installs made from the old archive hold the same file names in the
         // same folder, so they keep reading as downloaded.
         assert_eq!(m.engine_path(Path::new("/d")), Path::new("/d/models").join(&m.id));
+    }
+
+    // R44: the full-precision Parakeet — same pinned repository, the
+    // unquantized files, never the default download.
+    #[test]
+    fn r44_full_precision_parakeet_is_in_the_catalog() {
+        let reg = Registry::embedded().unwrap();
+        let standard = reg.recommended();
+        assert_eq!(standard.precision, Precision::Int8, "absent field = int8");
+        let full = reg.get("parakeet-tdt-0.6b-v3-full").expect("in the catalog");
+        assert_eq!(full.engine, EngineFamily::Parakeet);
+        assert_eq!(full.precision, Precision::Fp32);
+        assert!(!full.recommended, "a 2.5 GB download is opt-in");
+        assert_eq!(full.url, standard.url, "same repository, same pinned commit");
+        let names: Vec<&str> = full.files.iter().map(|f| f.name.as_str()).collect();
+        // What transcribe-rs loads for FP32: the graph, its external weights
+        // file, the decoder, and the shared preprocessor / vocabulary.
+        for needed in [
+            "encoder-model.onnx",
+            "encoder-model.onnx.data",
+            "decoder_joint-model.onnx",
+            "nemo128.onnx",
+            "vocab.txt",
+            "config.json",
+        ] {
+            assert!(names.contains(&needed), "{needed} missing");
+        }
+        assert!(!names.iter().any(|n| n.contains("int8")));
+        // The field survives the trip to the UI and stays out of the JSON
+        // of models that do not need it.
+        let json = serde_json::to_value(full).unwrap();
+        assert_eq!(json["precision"], "fp32");
+        assert!(serde_json::to_value(standard).unwrap().get("precision").is_none());
     }
 
     #[test]

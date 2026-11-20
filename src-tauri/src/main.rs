@@ -31,6 +31,9 @@ enum Command {
         /// Print the raw transcript without the cleanup pass.
         #[arg(long)]
         raw: bool,
+        /// Parakeet only: the folder holds the full-precision (fp32) files.
+        #[arg(long)]
+        full_precision: bool,
         /// 16 kHz (or any rate) WAV file to transcribe.
         wav: PathBuf,
     },
@@ -55,6 +58,7 @@ fn main() -> anyhow::Result<()> {
             model_path,
             engine,
             raw,
+            full_precision,
             wav,
         }) => {
             let family = match engine.as_str() {
@@ -64,7 +68,15 @@ fn main() -> anyhow::Result<()> {
             };
             let samples = yatyat_lib::stt::read_wav_16k_mono(&wav)?;
             let t0 = std::time::Instant::now();
-            let mut model = yatyat_lib::stt::LoadedModel::load_path(family, &model_path)?;
+            let mut model = yatyat_lib::stt::LoadedModel::load_path_with(
+                family,
+                &model_path,
+                if full_precision {
+                    yatyat_lib::registry::Precision::Fp32
+                } else {
+                    yatyat_lib::registry::Precision::Int8
+                },
+            )?;
             let load_time = t0.elapsed();
             let t1 = std::time::Instant::now();
             let text = model.transcribe(&samples)?;

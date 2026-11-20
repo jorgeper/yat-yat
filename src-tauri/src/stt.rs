@@ -2,7 +2,7 @@
 //! Two families: Parakeet (ONNX, directory models) and Whisper (GGUF files
 //! via whisper.cpp — Metal on macOS).
 
-use crate::registry::{EngineFamily, ModelEntry};
+use crate::registry::{EngineFamily, ModelEntry, Precision};
 use anyhow::{Context, Result};
 use std::path::Path;
 use transcribe_rs::onnx::parakeet::{ParakeetModel, ParakeetParams, TimestampGranularity};
@@ -27,7 +27,8 @@ pub struct LoadedModel {
 
 impl LoadedModel {
     pub fn load(entry: &ModelEntry, data_dir: &Path) -> Result<Self> {
-        let mut loaded = Self::load_path(entry.engine, &entry.engine_path(data_dir))
+        let mut loaded =
+            Self::load_path_with(entry.engine, &entry.engine_path(data_dir), entry.precision)
             .with_context(|| format!("loading model {}", entry.id))?;
         loaded.model_id = entry.id.clone();
         Ok(loaded)
@@ -35,13 +36,22 @@ impl LoadedModel {
 
     /// Load from an explicit path (CLI / validation harness).
     pub fn load_path(family: EngineFamily, path: &Path) -> Result<Self> {
+        Self::load_path_with(family, path, Precision::Int8)
+    }
+
+    /// [`Self::load_path`] for a Parakeet folder holding `precision` weights.
+    pub fn load_path_with(family: EngineFamily, path: &Path, precision: Precision) -> Result<Self> {
+        let quantization = match precision {
+            Precision::Int8 => Quantization::Int8,
+            Precision::Fp32 => Quantization::FP32,
+        };
         let engine = match family {
             EngineFamily::Whisper => SttEngine::Whisper(
                 WhisperEngine::load(path)
                     .map_err(|e| anyhow::anyhow!("loading whisper model: {e}"))?,
             ),
             EngineFamily::Parakeet => SttEngine::Parakeet(
-                ParakeetModel::load(path, &Quantization::Int8)
+                ParakeetModel::load(path, &quantization)
                     .map_err(|e| anyhow::anyhow!("loading parakeet model: {e}"))?,
             ),
         };

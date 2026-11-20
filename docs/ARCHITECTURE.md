@@ -441,6 +441,27 @@ byte-identical, so folders installed from the archive stay valid). The
 download is 671 MB instead of 479 MB — the archive was compressed, the
 repository's files are not. The `archive` kind stays for future use.
 
+## Full-precision Parakeet (post-SPEC16)
+
+Owner-reported (2026-11-19): a 20 s dictation came back as one word. The
+int8 Parakeet encoder skips whole sentences on some recordings, and which
+ones depends on how much audio it is handed: prefixes of that recording
+(8, 10, 12, 14, 16, 18, 20 s) gave 15, 0, 36, 25, 53, 15 and 45 words.
+The same windows through the unquantized (FP32) files gave 24, 24, 36,
+45, 53, 56 and 56. Swapping halves showed the encoder is responsible
+(int8 encoder + FP32 decoder still drops; FP32 encoder + int8 decoder
+mostly does not). The plain whole-recording path is affected too — 45
+words where FP32 hears 56 — and anything that makes more, shorter passes
+(chunking, live previews) is affected more.
+
+The catalog therefore offers `parakeet-tdt-0.6b-v3-full`: the FP32 files
+from the same pinned repository commit (R44). `ModelEntry.precision`
+(`int8` when absent) tells the loader which file names to expect. Cost
+on an M5: a 2.5 GB download instead of 0.67 GB, about 0.9 s instead of
+0.8 s for 30 s of audio in one pass, and roughly 0.8 GB more memory. The
+int8 model stays the default download; making the full one the default
+is an owner decision.
+
 ## Design notes
 
 - **One pipeline thread** serializes Idle→Recording→Processing, so double
