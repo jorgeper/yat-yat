@@ -497,6 +497,7 @@ mod tests {
             recommended: false,
             kind: DownloadKind::Files,
             filename: String::new(),
+            precision: Default::default(),
             files: list,
         }
     }

@@ -78,6 +78,52 @@
       "recommended": false,
       "kind": "file",
       "filename": "ggml-tiny.bin"
+    },
+    {
+      "id": "parakeet-tdt-0.6b-v3-full",
+      "display_name": "Parakeet V3 (full precision)",
+      "engine": "parakeet",
+      "url": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/",
+      "sha256": "8b6affd8668c4c7c71e7fb6ec90fc780c402177c26800bf4d1927f73b5c5fbec",
+      "size_bytes": 2549945719,
+      "languages": "25 European languages",
+      "description": "The uncompressed Parakeet V3. Steadier than the standard one — it does not skip sentences on quiet or noisy recordings — for a larger download and somewhat more time and memory.",
+      "recommended": false,
+      "kind": "files",
+      "filename": "",
+      "precision": "fp32",
+      "files": [
+        {
+          "name": "encoder-model.onnx.data",
+          "sha256": "9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36",
+          "size_bytes": 2435420160
+        },
+        {
+          "name": "decoder_joint-model.onnx",
+          "sha256": "e978ddf6688527182c10fde2eb4b83068421648985ef23f7a86be732be8706c1",
+          "size_bytes": 72520893
+        },
+        {
+          "name": "encoder-model.onnx",
+          "sha256": "98a74b21b4cc0017c1e7030319a4a96f4a9506e50f0708f3a516d02a77c96bb1",
+          "size_bytes": 41770866
+        },
+        {
+          "name": "nemo128.onnx",
+          "sha256": "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
+          "size_bytes": 139764
+        },
+        {
+          "name": "vocab.txt",
+          "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+          "size_bytes": 93939
+        },
+        {
+          "name": "config.json",
+          "sha256": "666903c76b9798caf2c210afd4f6cd60b08a8dbf9800ec8d7a3bc0d2148ac466",
+          "size_bytes": 97
+        }
+      ]
     }
   ]
 }
