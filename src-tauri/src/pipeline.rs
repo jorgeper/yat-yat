@@ -275,10 +275,15 @@ fn start_recording(app: &AppHandle, generation: &mut u64, tx: &mpsc::Sender<Msg>
         None
     };
 
+    let parakeet =
+        state.active_engine_family() == Some(crate::registry::EngineFamily::Parakeet);
+
     // Live transcription loop (SPEC3 FR-L2): periodic passes over the audio
     // so far, emitted to the overlay. Ends by itself when recording stops;
-    // never touches the authoritative stop path.
-    if live_mode {
+    // never touches the authoritative stop path. Whisper only — on Parakeet
+    // the chunker below does the live text too, without re-reading the
+    // whole recording on every pass.
+    if live_mode && !parakeet {
         let app_live = app.clone();
         std::thread::Builder::new()
             .name("live-transcribe".into())
@@ -290,14 +295,12 @@ fn start_recording(app: &AppHandle, generation: &mut u64, tx: &mpsc::Sender<Msg>
     // speech while the user is still talking, so the stop path only owes
     // the tail. Parakeet only — its cost grows with the audio it is handed,
     // while Whisper pays a fixed ~30 s window per pass, which would make
-    // extra passes a net loss. Live mode already owns the engine during
-    // recording, so the two never run together.
+    // extra passes a net loss. In live mode the same thread also previews
+    // the audio after the last cut, so one loop owns the engine.
     if let Some(stale) = state.chunks.lock().unwrap().take() {
         stale.abandon();
     }
-    if !live_mode
-        && state.active_engine_family() == Some(crate::registry::EngineFamily::Parakeet)
-    {
+    if parakeet {
         let progress = std::sync::Arc::new(std::sync::Mutex::new(
             crate::state::ChunkProgress::default(),
         ));
@@ -307,7 +310,7 @@ fn start_recording(app: &AppHandle, generation: &mut u64, tx: &mpsc::Sender<Msg>
             (app.clone(), progress.clone(), stop.clone());
         if let Ok(thread) = std::thread::Builder::new()
             .name("chunk-transcribe".into())
-            .spawn(move || chunk_loop(app_chunk, progress_chunk, stop_chunk, wake_rx))
+            .spawn(move || chunk_loop(app_chunk, progress_chunk, stop_chunk, wake_rx, live_mode))
         {
             *state.chunks.lock().unwrap() = Some(crate::state::ChunkSession {
                 progress,
@@ -389,12 +392,19 @@ fn chunk_loop(
     progress: std::sync::Arc<std::sync::Mutex<crate::state::ChunkProgress>>,
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     wake: mpsc::Receiver<()>,
+    mut live: bool,
 ) {
     use std::sync::atomic::Ordering;
+    // Live mode: when the next preview of the uncommitted audio is due, and
+    // how much audio the last one covered (no new audio, no new preview).
+    let mut preview_due = Instant::now();
+    let mut previewed_to = 0usize;
+    let mut filter = crate::chunking::PreviewFilter::default();
+    let poll = if live { crate::live::PREVIEW_POLL } else { CHUNK_POLL };
     loop {
         // Wait out the poll interval — but a stop wakes us at once, so the
         // stop path never waits on this sleep.
-        match wake.recv_timeout(CHUNK_POLL) {
+        match wake.recv_timeout(poll) {
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             _ => return, // stopped, or the session is gone
         }
@@ -410,6 +420,46 @@ fn chunk_loop(
             return; // recording ended
         };
         let Some(chunk) = crate::chunking::next_chunk(&buf, committed - start) else {
+            // Nothing to commit yet. In live mode, show a tentative reading
+            // of the audio since the last cut: a pass over that window only,
+            // so its cost follows the length of the current phrase, not of
+            // the whole recording.
+            let end = start + buf.len();
+            if live
+                && Instant::now() >= preview_due
+                && end > previewed_to
+                && buf.len() >= crate::chunking::PREVIEW_MIN_SAMPLES
+                && !stop.load(Ordering::SeqCst)
+            {
+                let t0 = Instant::now();
+                match state.transcribe_words(&app, &buf) {
+                    Ok(words) => {
+                        let (preview, final_words) = {
+                            let progress = progress.lock().unwrap();
+                            (
+                                crate::chunking::preview_text(
+                                    &progress.words,
+                                    crate::chunking::to_absolute(words, start),
+                                    committed as f32 / 16_000.0,
+                                ),
+                                crate::chunking::final_word_count(&progress.words, committed),
+                            )
+                        };
+                        // Only what two previews agree on reaches the screen.
+                        let text = filter.confirmed(&preview, final_words);
+                        // A stop during the pass owns the overlay now.
+                        if !stop.load(Ordering::SeqCst) && state.recorder.is_recording() {
+                            overlay::emit_stream_text(&app, &text);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("live preview failed; continuing waveform-only: {e}");
+                        live = false;
+                    }
+                }
+                previewed_to = end;
+                preview_due = Instant::now() + crate::live::preview_gap(t0.elapsed());
+            }
             continue;
         };
         // The user may have stopped while we were looking: the stop path
@@ -427,6 +477,10 @@ fn chunk_loop(
                 );
                 progress.committed = start + chunk.keep_to;
                 progress.chunks += 1;
+                // Preview again on the next tick: the text on screen was
+                // read before this cut existed.
+                preview_due = Instant::now();
+                previewed_to = 0;
             }
             Err(e) => {
                 log::warn!("chunk pass failed; the stop path will transcribe the rest: {e}");

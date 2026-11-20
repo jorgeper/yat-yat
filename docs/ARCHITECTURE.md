@@ -484,6 +484,52 @@ pass) and one comma became a period at a 1.2 s
 pause. One real recording is a thin sample — treat join quality as
 field-unproven.
 
+## Live transcription on the chunker (post-SPEC16)
+
+Owner-requested directly (2026-11-19). The SPEC3 live loop re-reads the
+whole recording on every pass, so on Parakeet a pass grew from 0.26 s at
+10 s of speech to 5.2 s at 140 s — the on-screen text fell seconds
+behind, and the stop path could queue behind a pass in flight. Live mode
+also switched chunking off, so stop paid a whole-recording pass again.
+
+On Parakeet the chunker thread now does both jobs (`pipeline::chunk_loop`
+with `live`): it commits finished stretches as before, and between cuts
+it previews the audio since the last cut — one pass over that window,
+stitched onto the committed words for display only
+(`chunking::preview_text`, R42). Previews rest `live::preview_gap` after
+each pass (R41: 150 ms floor, never less than the pass itself), and the
+loop polls every 100 ms in live mode. Whisper keeps the
+SPEC3 loop: its cost per pass is a fixed window, not the audio length.
+
+Shown raw, previews flicker: a window that ends mid-phrase makes the
+engine invent an ending ("…we can't be able to do it.") that the next
+preview takes back. `chunking::PreviewFilter` (R43) therefore sends a
+preview only up to the last word the previous preview also had; committed
+words are always sent. On the overlay side, `liveText.ts` realigns the
+tentative tail when a pass re-words stable text ("third party" →
+"third-party"), which used to repeat or swallow a word (U25).
+
+Replay (`transcribe --live`, M5): the app's loop in audio time, a preview
+every 0.5 s, each one timed against re-reading the whole recording so far.
+
+| Recording | Whole so far, worst | Since last cut, worst | Engine time, old → new |
+|---|---|---|---|
+| 30.5 s real dictation | 835 ms | 401 ms | 25.5 s → 11.2 s |
+| 35 s, few pauses | 1404 ms | 597 ms | 34.2 s → 20.7 s |
+
+How far the screen trails the voice (replay: time since the newest
+shown word was spoken, median): 1.8 s / 1.5 s on the two recordings with
+a 400 ms floor and 250 ms poll, 1.6 s / 1.2 s with 150 ms and 100 ms —
+for about 70% more engine time during recording. The rest is structural:
+the model does not settle on a word until it has heard what follows, and
+a word is shown only once a second preview confirms it.
+
+The gap widens with length: the old cost grows with the whole recording
+(5.2 s per pass at 140 s), the new one only with the time since the last
+pause. Feeding the replayed previews through the overlay's stabilizer,
+the text on screen ends within two or three words of the final
+transcript on both recordings.
+
 ## Design notes
 
 - **One pipeline thread** serializes Idle→Recording→Processing, so double

@@ -36,6 +36,11 @@ enum Command {
         /// report the tail — the only part the app's stop path waits for.
         #[arg(long)]
         chunked: bool,
+        /// Replay live transcription over the file and report what each
+        /// on-screen update costs: the old way (re-read the whole recording
+        /// so far) against the chunked way (read only since the last cut).
+        #[arg(long)]
+        live: bool,
         /// 16 kHz (or any rate) WAV file to transcribe.
         wav: PathBuf,
     },
@@ -61,6 +66,7 @@ fn main() -> anyhow::Result<()> {
             engine,
             raw,
             chunked,
+            live,
             wav,
         }) => {
             let family = match engine.as_str() {
@@ -72,6 +78,98 @@ fn main() -> anyhow::Result<()> {
             let t0 = std::time::Instant::now();
             let mut model = yatyat_lib::stt::LoadedModel::load_path(family, &model_path)?;
             let load_time = t0.elapsed();
+            if live {
+                // Replay what the app's chunker does in live mode, in audio
+                // time: poll every 250 ms, commit a chunk when a cut is
+                // found, otherwise preview the audio since the last cut (at
+                // most every 500 ms). Prints every text the overlay would be
+                // sent, and what each preview cost against re-reading the
+                // whole recording so far.
+                use yatyat_lib::chunking::{
+                    context_start, next_chunk, preview_text, stitch, to_absolute,
+                };
+                let no_words = || anyhow::anyhow!("--live needs word timestamps (parakeet)");
+                // YATYAT_LIVE_SKIP_WHOLE=1 skips timing the old whole-recording
+                // pass (slow on long files) when only the new path matters.
+                let skip_whole = std::env::var_os("YATYAT_LIVE_SKIP_WHOLE").is_some();
+                // Audio time advances by the poll interval, plus whatever each
+                // pass took: the app cannot look again while one is running.
+                let poll = (yatyat_lib::live::PREVIEW_POLL.as_secs_f64() * 16_000.0) as usize;
+                let mut committed = 0usize;
+                let mut words = Vec::new();
+                let mut next_preview = 0usize;
+                let mut filter = yatyat_lib::chunking::PreviewFilter::default();
+                let (mut whole_total, mut tail_total, mut whole_max, mut tail_max) =
+                    (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+                let mut previews = 0;
+                let mut lags = Vec::new();
+                let mut seen = poll;
+                while seen <= samples.len() {
+                    let start = context_start(committed);
+                    let buf = &samples[start..seen];
+                    if let Some(chunk) = next_chunk(buf, committed - start) {
+                        let t = std::time::Instant::now();
+                        let pass = model.transcribe_words(&buf[..chunk.end])?.ok_or_else(no_words)?;
+                        stitch(&mut words, to_absolute(pass, start), committed as f32 / 16_000.0);
+                        committed = start + chunk.keep_to;
+                        eprintln!("{:>6.2}s  cut at {:.2}s", seen as f64 / 16_000.0, committed as f64 / 16_000.0);
+                        seen += (t.elapsed().as_secs_f64() * 16_000.0) as usize;
+                        next_preview = seen;
+                    } else if seen >= next_preview && buf.len() >= yatyat_lib::chunking::PREVIEW_MIN_SAMPLES {
+                        let t = std::time::Instant::now();
+                        let pass = model.transcribe_words(buf)?.ok_or_else(no_words)?;
+                        let pass_time = t.elapsed();
+                        let tail_time = pass_time.as_secs_f64();
+                        let seam = committed as f32 / 16_000.0;
+                        let tail = to_absolute(pass, start);
+                        let mut all = words.clone();
+                        if all.is_empty() {
+                            all = tail.clone();
+                        } else {
+                            stitch(&mut all, tail.clone(), seam);
+                        }
+                        let text = preview_text(&words, tail, seam);
+                        let final_words = yatyat_lib::chunking::final_word_count(&words, committed);
+                        let text = filter.confirmed(&text, final_words);
+                        if !skip_whole {
+                            let t = std::time::Instant::now();
+                            model.transcribe(&samples[..seen])?;
+                            let whole_time = t.elapsed().as_secs_f64();
+                            whole_total += whole_time;
+                            whole_max = whole_max.max(whole_time);
+                        }
+                        // The text reaches the screen when the pass is done.
+                        seen += (tail_time * 16_000.0) as usize;
+                        let shown = text.split_whitespace().count();
+                        if let Some(word) = shown.checked_sub(1).and_then(|i| all.get(i)) {
+                            lags.push(seen as f64 / 16_000.0 - word.start as f64);
+                        }
+                        println!("{:.2}\t{text}", seen as f64 / 16_000.0);
+                        tail_total += tail_time;
+                        tail_max = tail_max.max(tail_time);
+                        previews += 1;
+                        next_preview = seen
+                            + (yatyat_lib::live::preview_gap(pass_time).as_secs_f64() * 16_000.0) as usize;
+                    }
+                    seen += poll;
+                }
+                lags.sort_by(|a, b| a.total_cmp(b));
+                if !lags.is_empty() {
+                    eprintln!(
+                        "newest word on screen was spoken: median {:.2}s ago, 90th percentile {:.2}s ago",
+                        lags[lags.len() / 2],
+                        lags[lags.len() * 9 / 10]
+                    );
+                }
+                eprintln!(
+                    "{previews} previews over {:.1}s: whole-so-far {whole_total:.2}s total, worst {:.0} ms; \
+                     since-last-cut {tail_total:.2}s total, worst {:.0} ms",
+                    samples.len() as f64 / 16_000.0,
+                    whole_max * 1e3,
+                    tail_max * 1e3
+                );
+                return Ok(());
+            }
             let text = if chunked {
                 use yatyat_lib::chunking::{
                     context_start, stitch, to_absolute, words_text, CONTEXT_AFTER_SECS,
