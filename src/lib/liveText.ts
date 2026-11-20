@@ -55,7 +55,33 @@ export function stabilize(prev: LiveText, nextRaw: string): LiveText {
   // tail always shows the newest rendering.
   const stableCount = Math.max(stableWords.length, agree);
   const stable = join([...stableWords, ...prevAll.slice(stableWords.length, stableCount)]);
-  const tentative = join(nextWords.slice(stableCount));
+  const tentative = join(nextWords.slice(stableCount + drift(stableWords, nextWords, agree)));
 
   return { stable, tentative };
+}
+
+/** How far to look for the stable text's end in a pass that re-worded it. */
+const MAX_DRIFT = 3;
+/** Words of stable text that must reappear in the pass to trust the match. */
+const ANCHOR = 3;
+
+/**
+ * A pass that re-words text already stable ("third party" → "third-party")
+ * has its later words at different positions than the stable text does.
+ * Stable never changes, but the tentative tail must still start right after
+ * the words stable ends with — or it repeats one or swallows one. Returns
+ * how far the pass's words are shifted against stable (0 = aligned, or no
+ * confident match).
+ */
+function drift(stableWords: string[], nextWords: string[], agree: number): number {
+  if (agree >= stableWords.length || stableWords.length < ANCHOR) return 0;
+  const anchor = stableWords.slice(-ANCHOR).map(norm);
+  if (anchor.some((w) => w === "")) return 0;
+  const end = stableWords.length;
+  for (const shift of [-1, 1, -2, 2, -3, 3].filter((s) => Math.abs(s) <= MAX_DRIFT)) {
+    const from = end + shift - ANCHOR;
+    if (from < 0 || from + ANCHOR > nextWords.length) continue;
+    if (anchor.every((w, i) => norm(nextWords[from + i]) === w)) return shift;
+  }
+  return 0;
 }
