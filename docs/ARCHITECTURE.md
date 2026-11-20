@@ -31,7 +31,7 @@ Right ⌘ (handy-keys event tap)
 | `history.rs` | 20-entry ring buffer + retained last WAV | R6 |
 | `audio.rs` | cpal capture worker thread, resampling, WAV IO | resample/WAV tests |
 | `stt.rs` | Engine abstraction (Whisper/Parakeet), `load_path` for CLI | exercised by I1 |
-| `downloader.rs` | Resume-able downloads, SHA-256 verify, tar.gz extract | sha/cancel tests |
+| `downloader.rs` | Resume-able downloads, SHA-256 verify, tar.gz extract, multi-file models | sha/cancel tests, R34–R35 |
 | `enhance.rs` | Ollama client, warmup, timeout fallback | localhost-guard tests |
 | `hotkey.rs` | handy-keys manager thread, capture mode for the recorder UI | validated via binding parse |
 | `overlay.rs` | Pill window: create/show/hide/position, level throttling | E6/E8 (UI side) |
@@ -420,6 +420,26 @@ about the re-key, restart failures surfaced in the error phase (U23,
 E21a–E21b). The definitive structural fix — Developer ID signing +
 notarization, whose TCC grant survives updates — is out of scope here and
 tracked for a future spec.
+
+## Model sources: the `files` kind (post-SPEC16)
+
+Owner-requested directly, without a SPEC/GOAL pair (2026-11-19). The
+registry gained a third `kind`, `files`: `url` is a base ending in `/`,
+and `files` lists each file's name, SHA-256 and size (R36 validates names
+as plain file names — they become paths). The entry's own `sha256` is the
+digest of that list (`registry::files_digest`), so the entry still pins
+its exact contents. The downloader fetches each file to `<name>.partial`
+(each resumable), verifies all of them, and only then renames them into
+place; `is_downloaded` for this kind means every listed file exists
+(R34–R35). Progress events cover the whole model, so the UI and
+`src/ipc/mock.ts` flow are unchanged.
+
+Parakeet V3 is the first user: it now downloads from
+`istupakov/parakeet-tdt-0.6b-v3-onnx` on Hugging Face at a pinned commit
+instead of the Handy project's `.tar.gz` of the same files (verified
+byte-identical, so folders installed from the archive stay valid). The
+download is 671 MB instead of 479 MB — the archive was compressed, the
+repository's files are not. The `archive` kind stays for future use.
 
 ## Design notes
 

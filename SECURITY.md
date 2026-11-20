@@ -66,10 +66,16 @@ the CSP, a hostile theme file's worst case is looking ugly.
 ## Trust notes (judgment calls, documented)
 
 - **Model hosts**: Whisper models come from the official `ggerganov/
-  whisper.cpp` Hugging Face repo; Parakeet from `blob.handy.computer` (the
-  Handy project's mirror). Both are integrity-pinned by SHA-256 in
-  `models.json`, so a tampered file cannot install — the residual trust is
-  availability, not integrity.
+  whisper.cpp` Hugging Face repo. Parakeet comes from
+  `istupakov/parakeet-tdt-0.6b-v3-onnx` on Hugging Face — the widely used
+  ONNX conversion of NVIDIA's `parakeet-tdt-0.6b-v3` (CC BY 4.0) — fetched
+  file by file from a **pinned commit**, not a branch. (Until
+  0.1.0-alpha.12 it came from `blob.handy.computer`, the Handy project's
+  repackaging of those same files: all five were verified byte-identical
+  before the switch, so existing installs are unaffected.) Everything is
+  integrity-pinned by SHA-256 in `models.json`, per file for Parakeet, so a
+  tampered file cannot install — the residual trust is availability, and
+  that the conversion is an individual's work rather than NVIDIA's.
 - **Permissions**: microphone (to hear you) and Accessibility (hotkey +
   paste). No screen recording, no network entitlements needed. The app is
   not sandboxed (Accessibility-based paste is incompatible with the Mac App

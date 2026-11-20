@@ -52,8 +52,10 @@ export interface ModelStatus {
   languages: string;
   description: string;
   recommended: boolean;
-  kind: "file" | "archive";
+  kind: "file" | "archive" | "files";
   filename: string;
+  /** "files" kind only: the files fetched from `url` (a base), each hash-checked. */
+  files?: { name: string; sha256: string; size_bytes: number }[];
   downloaded: boolean;
   downloading: boolean;
   partial_bytes: number;
