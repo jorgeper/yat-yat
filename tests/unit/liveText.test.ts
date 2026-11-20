@@ -61,3 +61,36 @@ describe("U6: live-text stabilizer", () => {
     expect(t.tentative).toBe("fresh start");
   });
 });
+
+// U25: a pass that re-words already-stable text shifts every later word by
+// a position or two; the tentative tail must still continue from where the
+// stable text ends — no repeated word, no swallowed word.
+describe("U25: live-text stabilizer realigns after re-worded stable text", () => {
+  const feed = (passes: string[]) => passes.reduce(stabilize, EMPTY_LIVE);
+
+  it("u25 two words merging into one does not repeat the next word", () => {
+    const live = feed([
+      "update the third party notices since we bumped two",
+      "update the third party notices since we bumped two",
+      "update the third-party notices since we bumped two dependencies",
+    ]);
+    expect(live.stable).toBe("update the third party notices since we bumped two");
+    expect(live.tentative).toBe("dependencies");
+  });
+
+  it("u25 one word splitting into two does not swallow the next word", () => {
+    const live = feed([
+      "write the changelog tonight and tomorrow",
+      "write the changelog tonight and tomorrow",
+      "write the change log tonight and tomorrow we test",
+    ]);
+    expect(live.stable).toBe("write the changelog tonight and tomorrow");
+    expect(live.tentative).toBe("we test");
+  });
+
+  it("u25 without a confident match the positions are left alone", () => {
+    const live = feed(["one two three four", "one two three four", "alpha beta gamma delta epsilon"]);
+    expect(live.stable).toBe("one two three four");
+    expect(live.tentative).toBe("epsilon");
+  });
+});

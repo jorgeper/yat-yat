@@ -54,8 +54,12 @@ export interface ModelStatus {
   languages: string;
   description: string;
   recommended: boolean;
-  kind: "file" | "archive";
+  kind: "file" | "archive" | "files";
+  /** Parakeet only: which weights the files hold. Absent = "int8". */
+  precision?: "int8" | "fp32";
   filename: string;
+  /** "files" kind only: the files fetched from `url` (a base), each hash-checked. */
+  files?: { name: string; sha256: string; size_bytes: number }[];
   downloaded: boolean;
   downloading: boolean;
   partial_bytes: number;
