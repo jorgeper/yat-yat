@@ -15,7 +15,7 @@ use std::sync::Arc;
 pub const TARGET_RATE: u32 = 16_000;
 /// Recordings shorter than 1 s are zero-padded to 1.25 s — tiny buffers make
 /// STT engines misbehave.
-const MIN_SAMPLES: usize = (TARGET_RATE as usize) * 5 / 4;
+pub const MIN_SAMPLES: usize = (TARGET_RATE as usize) * 5 / 4;
 /// SPEC FR-1.4: recording auto-stops at 5 minutes.
 pub const MAX_RECORD_SECS: u64 = 300;
 /// SPEC14 FR-D1: after the stream stops, the stop-drain considers the channel
@@ -38,6 +38,12 @@ enum Cmd {
     /// (SPEC3 live passes). Capture continues untouched.
     Snapshot {
         reply: mpsc::Sender<(Vec<f32>, u32)>,
+    },
+    /// Non-destructive copy of the 16 kHz audio captured from sample `from`
+    /// onward (the chunker's pending audio). Capture continues untouched.
+    SnapshotFrom {
+        from: usize,
+        reply: mpsc::Sender<Vec<f32>>,
     },
     Cancel,
     Shutdown,
@@ -88,6 +94,19 @@ impl AudioRecorder {
         self.tx.send(Cmd::Snapshot { reply }).ok()?;
         let (samples, _rate) = rx.recv().ok()?;
         Some(samples)
+    }
+
+    /// Copy of the 16 kHz audio captured since sample `from`. Recording
+    /// continues; None when not recording. The chunker polls this several
+    /// times a second, so it copies only the pending stretch, never the
+    /// whole recording.
+    pub fn snapshot_from_16k(&self, from: usize) -> Option<Vec<f32>> {
+        if !self.is_recording() {
+            return None;
+        }
+        let (reply, rx) = mpsc::channel();
+        self.tx.send(Cmd::SnapshotFrom { from, reply }).ok()?;
+        rx.recv().ok()
     }
 
     pub fn cancel(&self) {
@@ -245,6 +264,16 @@ fn worker(rx: mpsc::Receiver<Cmd>, recording: Arc<AtomicBool>, level_cb: LevelCa
                 }
                 // Already 16 kHz — a snapshot is just a copy now.
                 let _ = reply.send((captured.snapshot(), TARGET_RATE));
+            }
+            Cmd::SnapshotFrom { from, reply } => {
+                if let Some(stream) = &active {
+                    while let Ok(chunk) = stream.samples_rx.try_recv() {
+                        if let Some(rs) = resampler.as_mut() {
+                            captured.push_chunk(rs.process(&chunk));
+                        }
+                    }
+                }
+                let _ = reply.send(captured.snapshot_from(from));
             }
             Cmd::Cancel => {
                 active = None;

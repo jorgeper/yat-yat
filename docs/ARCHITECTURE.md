@@ -30,6 +30,7 @@ Right ⌘ (handy-keys event tap)
 | `registry.rs` | Data-driven model catalog (`models.json`) | R7 |
 | `history.rs` | 20-entry ring buffer + retained last WAV | R6 |
 | `audio.rs` | cpal capture worker thread, resampling, WAV IO | resample/WAV tests |
+| `chunking.rs` | Pure pause-finding + overlap stitching for chunked transcription | R28–R30, R32–R33 |
 | `stt.rs` | Engine abstraction (Whisper/Parakeet), `load_path` for CLI | exercised by I1 |
 | `downloader.rs` | Resume-able downloads, SHA-256 verify, tar.gz extract, multi-file models | sha/cancel tests, R34–R35 |
 | `enhance.rs` | Ollama client, warmup, timeout fallback | localhost-guard tests |
@@ -440,6 +441,134 @@ instead of the Handy project's `.tar.gz` of the same files (verified
 byte-identical, so folders installed from the archive stay valid). The
 download is 671 MB instead of 479 MB — the archive was compressed, the
 repository's files are not. The `archive` kind stays for future use.
+
+## Chunked transcription while recording (post-SPEC16)
+
+Owner-requested directly, without a SPEC/GOAL pair (2026-11-19) — this
+section is its record. It amends the SPEC3/SPEC14 statement that the stop
+path "takes the full buffer": with Parakeet and live mode off, it now takes
+only the tail.
+
+**Why.** The stop path handed the whole recording to the engine after the
+user stopped, and Parakeet's cost grows faster than the audio (M5, release,
+int8 ONNX on CPU): 35 s → 0.95 s, 70 s → 2.1 s, 140 s → 5.1 s. A field
+log confirmed the app matched the CLI: 28 s of speech, `stop -> delivered
+in 817 ms`. The wait under the progress fill was that single pass.
+
+**What.** While recording, `pipeline.rs::chunk_loop` polls every 250 ms,
+asks the pure `chunking::next_chunk` for a cut, and transcribes the
+finished stretch through the warm engine. At stop, `finish_recording`
+stops the chunker (waiting out a pass in flight — that audio is owed
+either way), transcribes only the audio after the last cut, and runs the
+unchanged cleanup → enhancement → focus guard → paste path. A recording
+with no cut takes the old whole-buffer path, byte-for-byte.
+
+**Cut rules** (`find_cut`, R28–R29): never under 4 s; the longest pause of
+≥ 500 ms (≥ 250 ms once 15 s are pending), cut mid-pause; past 30 s of
+unbroken speech, the quietest 200 ms. Silence is relative to the stretch's
+own loud level, so no calibration and no VAD model.
+
+**Why overlap + stitching** (R32–R33). A chunk transcribed alone gets a
+capital on its first word and a period on its last regardless of the
+sentence (measured on real dictation: a capital and a full stop appeared
+mid-sentence at every cut). So each pass also gets 2 s of audio before its chunk and 1.5 s
+after, and consecutive passes are stitched by aligning the words both
+heard in the overlap (LCS on normalized text + time proximity); a word
+only one pass heard is kept if that pass owns its side of the cut. Two
+engine behaviors shaped this, both measured: word **end** times are
+useless (a word "lasts" until the next one starts, so the word before a
+4 s pause ends 4 s later — position is judged by start time only), and a
+pass often **hallucinates at a truncated window end** (several invented
+words, all stamped with the window's last instant), which is exactly the region the next pass overrides.
+
+**Scope.** Parakeet only: Whisper pays a fixed ~30 s encoder window per
+pass (≈ 0.85 s on the same machine for a 2.5 s clip), so extra passes
+would cost more than they save. Off when `live_transcription` is on —
+live passes already own the engine during recording.
+
+**Measured** (same machine, `yat-yat transcribe --chunked`, which replays
+the live rules over a WAV):
+
+| Recording | Whole-buffer pass (old wait) | Tail after stop (new wait) | Passes during recording |
+| --- | --- | --- | --- |
+| 30.5 s real dictation | 0.91–1.13 s | 0.16–0.19 s | 5 |
+| 35 s synthesized | 0.92–1.55 s | 0.27–0.29 s | 3 |
+| 140 s synthesized | 5.2–7.7 s | 0.27–0.28 s | 15 |
+
+Background passes cost about 5 % of recording time in CPU (7.2 s over
+140 s). Text versus the whole-buffer pass: same words on the synthesized
+clips (punctuation and hyphenation vary the way the engine's own repeats
+do); on the real dictation no dropped or duplicated words, two word
+choices changed (both arguably more correct than the whole-buffer
+pass) and one comma became a period at a 1.2 s
+pause. One real recording is a thin sample — treat join quality as
+field-unproven.
+
+## Parakeet noise floor (post-SPEC16)
+
+Every Parakeet pass reads the audio through `stt::with_noise_floor`, which
+adds a faint fixed-seed noise (peak 0.0025 of full scale, about -60 dB RMS).
+
+Why: the quantized (int8) encoder skips whole sentences on some clean
+recordings, and what it skips changes with the length of audio it is given.
+On one 20 s dictation (56 words spoken) it returned 45 words for the whole
+recording, 0 for the first 10 s and 15 for the first 18 s. Whole-recording
+transcription lost a fifth of the text; chunked transcription, which runs
+many shorter passes, delivered 6 words. With the noise floor the same passes
+return 56, 30 and 56 words and the chunked path returns 56 — the same as
+the full-precision weights give without it.
+
+Measured on the failing recording and five others. On the five others the
+whole-recording word count moved by at most one word (four were unchanged
+word for word) and the chunked count by at most two. A third of the noise did not fix the failing recording; ten
+times as much did no harm. Why the encoder fails on that recording is not
+established — the fix is empirical. Test: R45.
+
+## Live transcription on the chunker (post-SPEC16)
+
+Owner-requested directly (2026-11-19). The SPEC3 live loop re-reads the
+whole recording on every pass, so on Parakeet a pass grew from 0.26 s at
+10 s of speech to 5.2 s at 140 s — the on-screen text fell seconds
+behind, and the stop path could queue behind a pass in flight. Live mode
+also switched chunking off, so stop paid a whole-recording pass again.
+
+On Parakeet the chunker thread now does both jobs (`pipeline::chunk_loop`
+with `live`): it commits finished stretches as before, and between cuts
+it previews the audio since the last cut — one pass over that window,
+stitched onto the committed words for display only
+(`chunking::preview_text`, R42). Previews rest `live::preview_gap` after
+each pass (R41: 150 ms floor, never less than the pass itself), and the
+loop polls every 100 ms in live mode. Whisper keeps the
+SPEC3 loop: its cost per pass is a fixed window, not the audio length.
+
+Shown raw, previews flicker: a window that ends mid-phrase makes the
+engine invent an ending ("…we can't be able to do it.") that the next
+preview takes back. `chunking::PreviewFilter` (R43) therefore sends a
+preview only up to the last word the previous preview also had; committed
+words are always sent. On the overlay side, `liveText.ts` realigns the
+tentative tail when a pass re-words stable text ("third party" →
+"third-party"), which used to repeat or swallow a word (U25).
+
+Replay (`transcribe --live`, M5): the app's loop in audio time, a preview
+every 0.5 s, each one timed against re-reading the whole recording so far.
+
+| Recording | Whole so far, worst | Since last cut, worst | Engine time, old → new |
+|---|---|---|---|
+| 30.5 s real dictation | 835 ms | 401 ms | 25.5 s → 11.2 s |
+| 35 s, few pauses | 1404 ms | 597 ms | 34.2 s → 20.7 s |
+
+How far the screen trails the voice (replay: time since the newest
+shown word was spoken, median): 1.8 s / 1.5 s on the two recordings with
+a 400 ms floor and 250 ms poll, 1.6 s / 1.2 s with 150 ms and 100 ms —
+for about 70% more engine time during recording. The rest is structural:
+the model does not settle on a word until it has heard what follows, and
+a word is shown only once a second preview confirms it.
+
+The gap widens with length: the old cost grows with the whole recording
+(5.2 s per pass at 140 s), the new one only with the time since the last
+pause. Feeding the replayed previews through the overlay's stabilizer,
+the text on screen ends within two or three words of the final
+transcript on both recordings.
 
 ## Design notes
 

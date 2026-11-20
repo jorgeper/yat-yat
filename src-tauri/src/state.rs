@@ -43,6 +43,58 @@ pub struct AppState {
     /// SPEC14 FR-D3: the in-flight background write of the retained WAV.
     /// Retry must join it before reading — never a partial file.
     wav_write: Mutex<Option<std::thread::JoinHandle<()>>>,
+    /// The in-flight chunked-transcription session, if this recording has
+    /// one (chunking.rs). The stop path takes and finishes it; Cancel and a
+    /// new recording abandon it.
+    pub chunks: Mutex<Option<ChunkSession>>,
+}
+
+/// Chunks already transcribed while the user was still talking.
+#[derive(Default)]
+pub struct ChunkProgress {
+    /// Samples (16 kHz) already transcribed — the stop path transcribes only
+    /// what comes after.
+    pub committed: usize,
+    /// The transcript so far, stitched across chunks, in absolute recording
+    /// time. Runs a little past `committed`: each pass sees context after
+    /// its cut, which the next pass is stitched onto.
+    pub words: Vec<crate::stt::Word>,
+    /// How many chunks were transcribed (for the stop-path log line).
+    pub chunks: usize,
+}
+
+/// One recording's chunker thread plus what it has produced so far.
+pub struct ChunkSession {
+    pub progress: std::sync::Arc<Mutex<ChunkProgress>>,
+    /// Set to make the chunker exit before starting another pass. A pass
+    /// already running finishes first — its audio has to be transcribed
+    /// either way.
+    pub stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Wakes the chunker out of its poll wait, so stopping never waits for
+    /// the poll interval to run out.
+    pub wake: std::sync::mpsc::Sender<()>,
+    pub thread: std::thread::JoinHandle<()>,
+}
+
+impl ChunkSession {
+    /// Stop the chunker, wait for any pass in flight, and return what it
+    /// transcribed.
+    pub fn finish(self) -> ChunkProgress {
+        self.signal_stop();
+        let _ = self.thread.join();
+        std::mem::take(&mut *self.progress.lock().unwrap())
+    }
+
+    /// Stop the chunker without waiting; its output is discarded.
+    pub fn abandon(self) {
+        self.signal_stop();
+    }
+
+    /// Tell the chunker to exit before its next pass, and wake it now.
+    pub fn signal_stop(&self) {
+        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.wake.send(());
+    }
 }
 
 impl AppState {
@@ -72,6 +124,7 @@ impl AppState {
             rtf: Mutex::new(crate::progress::RtfStore::new(rtf)),
             stop_pending: std::sync::atomic::AtomicBool::new(false),
             wav_write: Mutex::new(None),
+            chunks: Mutex::new(None),
         }
     }
 
@@ -137,6 +190,16 @@ impl AppState {
             .and_then(|id| self.registry.get(id))
             .map(|entry| entry.is_downloaded(&self.data_dir))
             .unwrap_or(false)
+    }
+
+    /// Engine family of the active model, if one is set and known.
+    pub fn active_engine_family(&self) -> Option<crate::registry::EngineFamily> {
+        let settings = self.settings.read().unwrap();
+        settings
+            .active_model
+            .as_deref()
+            .and_then(|id| self.registry.get(id))
+            .map(|entry| entry.engine)
     }
 
     /// Load the active model into `engine` if it isn't already the loaded one.
@@ -220,6 +283,29 @@ impl AppState {
             );
         }
         result
+    }
+
+    /// Like [`Self::transcribe`], but to timestamped words (chunking.rs).
+    /// Errors when the active engine has no word timing — callers only use
+    /// this on the Parakeet path.
+    pub fn transcribe_words(
+        &self,
+        app: &AppHandle,
+        samples: &[f32],
+    ) -> anyhow::Result<Vec<crate::stt::Word>> {
+        let mut engine = self.engine.lock().unwrap();
+        let active_id = self.load_if_needed(app, &mut engine)?;
+        let t0 = std::time::Instant::now();
+        let result = engine.as_mut().unwrap().transcribe_words(samples);
+        drop(engine);
+        let words = result?
+            .ok_or_else(|| anyhow::anyhow!("engine '{active_id}' has no word timestamps"))?;
+        self.observe_rtf(
+            &active_id,
+            samples.len() as f32 / 16_000.0,
+            t0.elapsed().as_secs_f32(),
+        );
+        Ok(words)
     }
 
     /// Unload the engine (model switched or deleted).
