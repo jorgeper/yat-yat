@@ -52,6 +52,22 @@ impl LiveInterval {
     }
 }
 
+/// Shortest rest between two live preview passes on the chunked path
+/// (pipeline::chunk_loop).
+pub const PREVIEW_MIN_GAP: Duration = Duration::from_millis(150);
+/// How often the chunker looks at the recording in live mode (it polls
+/// every `pipeline::CHUNK_POLL` otherwise): the wait before a due preview
+/// starts is part of how far the words on screen trail the voice.
+pub const PREVIEW_POLL: Duration = Duration::from_millis(100);
+
+/// How long the chunked live path rests after a preview pass that took
+/// `pass`: at least [`PREVIEW_MIN_GAP`], and never less than the pass
+/// itself — so previews use at most half of one core however slow the
+/// machine, the same promise [`LiveInterval`] makes for whole-buffer passes.
+pub fn preview_gap(pass: Duration) -> Duration {
+    pass.max(PREVIEW_MIN_GAP)
+}
+
 /// Accumulates mono samples during a recording. Snapshots are non-destructive
 /// (SPEC3 FR-L2: capture must not hiccup); `take` drains for the final pass.
 #[derive(Debug, Default)]
@@ -67,6 +83,13 @@ impl CaptureBuffer {
     /// Copy of everything captured so far; capture continues untouched.
     pub fn snapshot(&self) -> Vec<f32> {
         self.samples.clone()
+    }
+
+    /// Copy of the audio captured from sample `from` onward (the chunker's
+    /// view: everything since its last cut). Empty when `from` is past the
+    /// end. Capture continues untouched.
+    pub fn snapshot_from(&self, from: usize) -> Vec<f32> {
+        self.samples.get(from..).map(<[f32]>::to_vec).unwrap_or_default()
     }
 
     pub fn take(&mut self) -> Vec<f32> {
@@ -136,6 +159,21 @@ mod tests {
         assert_eq!(interval.current(), Duration::from_millis(1000));
     }
 
+    // R41: the chunked live path's pacing — a floor between previews, and
+    // at most half the time spent transcribing on a slow machine.
+    #[test]
+    fn r41_preview_gap_has_a_floor_and_caps_the_duty_cycle() {
+        assert_eq!(preview_gap(Duration::from_millis(0)), PREVIEW_MIN_GAP);
+        assert_eq!(preview_gap(Duration::from_millis(150)), PREVIEW_MIN_GAP);
+        assert_eq!(preview_gap(PREVIEW_MIN_GAP), PREVIEW_MIN_GAP);
+        for slow_ms in [401u64, 900, 5_000] {
+            let pass = Duration::from_millis(slow_ms);
+            assert_eq!(preview_gap(pass), pass, "rest as long as the pass took");
+        }
+        // Faster than the whole-buffer cadence it replaces.
+        assert!(PREVIEW_MIN_GAP < Duration::from_millis(BASE_INTERVAL_MS));
+    }
+
     // R25: clear (the Cancel path) releases the buffer's allocation — a
     // cancelled long recording must not pin memory until the next stop.
     #[test]
@@ -170,5 +208,20 @@ mod tests {
         let taken = buffer.take();
         assert_eq!(taken.len(), 5);
         assert!(buffer.is_empty(), "take drains for the final pass");
+    }
+
+    // R31: the chunker's partial snapshot — only the audio after its last
+    // cut, never disturbing capture, and safe past the end.
+    #[test]
+    fn r31_snapshot_from_copies_only_the_pending_audio() {
+        let mut buffer = CaptureBuffer::default();
+        buffer.push_chunk(&[0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(buffer.snapshot_from(0), vec![0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(buffer.snapshot_from(3), vec![0.4]);
+        assert!(buffer.snapshot_from(4).is_empty());
+        assert!(buffer.snapshot_from(99).is_empty(), "past the end is empty, not a panic");
+        buffer.push_chunk(&[0.5]);
+        assert_eq!(buffer.snapshot_from(3), vec![0.4, 0.5], "capture continued");
+        assert_eq!(buffer.len(), 5, "snapshots are non-destructive");
     }
 }

@@ -13,6 +13,8 @@ use tauri::{AppHandle, Emitter, Manager};
 const PRESS_DEBOUNCE: Duration = Duration::from_millis(30);
 /// Unanswered focus-guard prompts fall back to the clipboard (SPEC7 FR-G4).
 const FOCUS_PROMPT_TIMEOUT_SECS: u64 = 10;
+/// How often the chunker looks for a pause to cut at (chunking.rs).
+const CHUNK_POLL: Duration = Duration::from_millis(250);
 
 #[derive(Debug)]
 enum Msg {
@@ -169,6 +171,9 @@ fn run(app: AppHandle, rx: mpsc::Receiver<Msg>, tx: mpsc::Sender<Msg>) {
             Msg::Cancel => match stage {
                 Stage::Recording => {
                     let state = app.state::<AppState>();
+                    if let Some(session) = state.chunks.lock().unwrap().take() {
+                        session.abandon();
+                    }
                     state.recorder.cancel();
                     state.hotkeys_set_cancel(false);
                     overlay::hide(&app);
@@ -270,15 +275,50 @@ fn start_recording(app: &AppHandle, generation: &mut u64, tx: &mpsc::Sender<Msg>
         None
     };
 
+    let parakeet =
+        state.active_engine_family() == Some(crate::registry::EngineFamily::Parakeet);
+
     // Live transcription loop (SPEC3 FR-L2): periodic passes over the audio
     // so far, emitted to the overlay. Ends by itself when recording stops;
-    // never touches the authoritative stop path.
-    if live_mode {
+    // never touches the authoritative stop path. Whisper only — on Parakeet
+    // the chunker below does the live text too, without re-reading the
+    // whole recording on every pass.
+    if live_mode && !parakeet {
         let app_live = app.clone();
         std::thread::Builder::new()
             .name("live-transcribe".into())
             .spawn(move || live_loop(app_live))
             .expect("spawn live loop");
+    }
+
+    // Chunked transcription (chunking.rs): transcribe finished stretches of
+    // speech while the user is still talking, so the stop path only owes
+    // the tail. Parakeet only — its cost grows with the audio it is handed,
+    // while Whisper pays a fixed ~30 s window per pass, which would make
+    // extra passes a net loss. In live mode the same thread also previews
+    // the audio after the last cut, so one loop owns the engine.
+    if let Some(stale) = state.chunks.lock().unwrap().take() {
+        stale.abandon();
+    }
+    if parakeet {
+        let progress = std::sync::Arc::new(std::sync::Mutex::new(
+            crate::state::ChunkProgress::default(),
+        ));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (wake, wake_rx) = mpsc::channel();
+        let (app_chunk, progress_chunk, stop_chunk) =
+            (app.clone(), progress.clone(), stop.clone());
+        if let Ok(thread) = std::thread::Builder::new()
+            .name("chunk-transcribe".into())
+            .spawn(move || chunk_loop(app_chunk, progress_chunk, stop_chunk, wake_rx, live_mode))
+        {
+            *state.chunks.lock().unwrap() = Some(crate::state::ChunkSession {
+                progress,
+                stop,
+                wake,
+                thread,
+            });
+        }
     }
 
     // Pre-warm the enhancement model so a cold Ollama never delays the paste.
@@ -343,6 +383,113 @@ fn live_loop(app: AppHandle) {
     }
 }
 
+/// Transcribe finished stretches of speech during recording (chunking.rs).
+/// Degrades gracefully: any failure just ends the loop, and the stop path
+/// transcribes whatever was not committed — at worst the whole recording,
+/// exactly as before chunking existed.
+fn chunk_loop(
+    app: AppHandle,
+    progress: std::sync::Arc<std::sync::Mutex<crate::state::ChunkProgress>>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    wake: mpsc::Receiver<()>,
+    mut live: bool,
+) {
+    use std::sync::atomic::Ordering;
+    // Live mode: when the next preview of the uncommitted audio is due, and
+    // how much audio the last one covered (no new audio, no new preview).
+    let mut preview_due = Instant::now();
+    let mut previewed_to = 0usize;
+    let mut filter = crate::chunking::PreviewFilter::default();
+    let poll = if live { crate::live::PREVIEW_POLL } else { CHUNK_POLL };
+    loop {
+        // Wait out the poll interval — but a stop wakes us at once, so the
+        // stop path never waits on this sleep.
+        match wake.recv_timeout(poll) {
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            _ => return, // stopped, or the session is gone
+        }
+        if stop.load(Ordering::SeqCst) {
+            return;
+        }
+        let state = app.state::<AppState>();
+        let committed = progress.lock().unwrap().committed;
+        // The engine also gets the audio just before the last cut and just
+        // after the new one, so chunk edges are punctuated in context.
+        let start = crate::chunking::context_start(committed);
+        let Some(buf) = state.recorder.snapshot_from_16k(start) else {
+            return; // recording ended
+        };
+        let Some(chunk) = crate::chunking::next_chunk(&buf, committed - start) else {
+            // Nothing to commit yet. In live mode, show a tentative reading
+            // of the audio since the last cut: a pass over that window only,
+            // so its cost follows the length of the current phrase, not of
+            // the whole recording.
+            let end = start + buf.len();
+            if live
+                && Instant::now() >= preview_due
+                && end > previewed_to
+                && buf.len() >= crate::chunking::PREVIEW_MIN_SAMPLES
+                && !stop.load(Ordering::SeqCst)
+            {
+                let t0 = Instant::now();
+                match state.transcribe_words(&app, &buf) {
+                    Ok(words) => {
+                        let (preview, final_words) = {
+                            let progress = progress.lock().unwrap();
+                            (
+                                crate::chunking::preview_text(
+                                    &progress.words,
+                                    crate::chunking::to_absolute(words, start),
+                                    committed as f32 / 16_000.0,
+                                ),
+                                crate::chunking::final_word_count(&progress.words, committed),
+                            )
+                        };
+                        // Only what two previews agree on reaches the screen.
+                        let text = filter.confirmed(&preview, final_words);
+                        // A stop during the pass owns the overlay now.
+                        if !stop.load(Ordering::SeqCst) && state.recorder.is_recording() {
+                            overlay::emit_stream_text(&app, &text);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("live preview failed; continuing waveform-only: {e}");
+                        live = false;
+                    }
+                }
+                previewed_to = end;
+                preview_due = Instant::now() + crate::live::preview_gap(t0.elapsed());
+            }
+            continue;
+        };
+        // The user may have stopped while we were looking: the stop path
+        // owns the engine now, don't queue a pass ahead of it.
+        if stop.load(Ordering::SeqCst) {
+            return;
+        }
+        match state.transcribe_words(&app, &buf[..chunk.end]) {
+            Ok(words) => {
+                let mut progress = progress.lock().unwrap();
+                crate::chunking::stitch(
+                    &mut progress.words,
+                    crate::chunking::to_absolute(words, start),
+                    committed as f32 / 16_000.0,
+                );
+                progress.committed = start + chunk.keep_to;
+                progress.chunks += 1;
+                // Preview again on the next tick: the text on screen was
+                // read before this cut existed.
+                preview_due = Instant::now();
+                previewed_to = 0;
+            }
+            Err(e) => {
+                log::warn!("chunk pass failed; the stop path will transcribe the rest: {e}");
+                return;
+            }
+        }
+    }
+}
+
 /// Stop, transcribe, and deliver — or hand off to the focus-guard prompt.
 /// Returns the pipeline's next stage (Idle, or AwaitFocusConfirm when the
 /// prompt is showing).
@@ -355,6 +502,12 @@ fn finish_recording(app: &AppHandle, generation: u64, tx: &mpsc::Sender<Msg>) ->
     state
         .stop_pending
         .store(true, std::sync::atomic::Ordering::SeqCst);
+    // Same for the chunker: no new pass from here on. Taken now so every
+    // early return below drops it (the thread exits by itself).
+    let chunk_session = state.chunks.lock().unwrap().take();
+    if let Some(session) = &chunk_session {
+        session.signal_stop();
+    }
     state.hotkeys_set_cancel(false);
     overlay::show_state(app, overlay::state::TRANSCRIBING);
     tray::set_state(app, tray::TrayState::Processing);
@@ -405,7 +558,20 @@ fn finish_recording(app: &AppHandle, generation: u64, tx: &mpsc::Sender<Msg>) ->
     // call runs. The ticker thread only reads the stop flag — the pipeline
     // thread never blocks on it — and the flag is cleared on EVERY exit
     // below before the overlay changes state or hides.
-    let audio_secs = samples.len() as f32 / 16_000.0;
+    // What the chunker already transcribed while the user was talking; this
+    // waits out a chunk pass still in flight (that audio has to be
+    // transcribed either way). Only the tail after it is left to do.
+    let chunked = chunk_session
+        .map(crate::state::ChunkSession::finish)
+        .unwrap_or_default();
+    let committed = chunked.committed.min(samples.len());
+    let audio_secs = (samples.len() - committed) as f32 / 16_000.0;
+    log::info!(
+        "stop: {} chunk(s) covering {:.1}s already transcribed, {:.1}s left",
+        chunked.chunks,
+        committed as f32 / 16_000.0,
+        audio_secs
+    );
     let expected = state.expected_stt_secs(audio_secs);
     let ticking = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
     {
@@ -422,7 +588,8 @@ fn finish_recording(app: &AppHandle, generation: u64, tx: &mpsc::Sender<Msg>) ->
             }
         });
     }
-    let result = transcribe_and_clean(app, &samples);
+    let result =
+        transcribe_tail(app, &samples, chunked).and_then(|raw| clean_and_enhance(app, &raw));
     ticking.store(false, std::sync::atomic::Ordering::Relaxed);
 
     match result {
@@ -525,17 +692,70 @@ fn resolve_focus(app: &AppHandle, action: FocusAction) {
     tray::set_state(app, tray::TrayState::Idle);
 }
 
+/// Raw transcript of a finished recording, given what the chunker already
+/// transcribed: only the audio after its last cut goes through the engine.
+/// With no chunks this is the plain whole-recording pass.
+fn transcribe_tail(
+    app: &AppHandle,
+    samples: &[f32],
+    chunked: crate::state::ChunkProgress,
+) -> anyhow::Result<String> {
+    let state = app.state::<AppState>();
+    let committed = chunked.committed.min(samples.len());
+    if committed == 0 {
+        return state.transcribe(app, samples);
+    }
+    let mut transcript = chunked.words;
+    if committed < samples.len() {
+        // Like every chunk, the tail goes to the engine with the audio just
+        // before its cut as context, and is stitched onto what came before.
+        let start = crate::chunking::context_start(committed);
+        // Tiny buffers make STT engines misbehave — same floor the recorder
+        // applies to a whole short recording.
+        let mut padded;
+        let window = &samples[start..];
+        let window = if window.len() < audio::MIN_SAMPLES {
+            padded = window.to_vec();
+            padded.resize(audio::MIN_SAMPLES, 0.0);
+            &padded[..]
+        } else {
+            window
+        };
+        match state.transcribe_words(app, window) {
+            Ok(words) => crate::chunking::stitch(
+                &mut transcript,
+                crate::chunking::to_absolute(words, start),
+                committed as f32 / 16_000.0,
+            ),
+            // e.g. the active model was switched mid-recording to an engine
+            // without word timing: never lose the dictation over it — fall
+            // back to the whole-recording pass.
+            Err(e) => {
+                log::warn!("chunked tail failed ({e}); transcribing the whole recording");
+                return state.transcribe(app, samples);
+            }
+        }
+    }
+    Ok(crate::chunking::words_text(&transcript))
+}
+
 /// STT + deterministic cleanup + optional enhancement (SPEC §4).
 fn transcribe_and_clean(app: &AppHandle, samples: &[f32]) -> anyhow::Result<String> {
     let state = app.state::<AppState>();
     // RTF observation happens inside state.transcribe (raw engine time
     // only) — cleanup and enhancement below never pollute the estimate.
     let raw = state.transcribe(app, samples)?;
+    clean_and_enhance(app, &raw)
+}
+
+/// Deterministic cleanup + optional enhancement over a raw transcript.
+fn clean_and_enhance(app: &AppHandle, raw: &str) -> anyhow::Result<String> {
+    let state = app.state::<AppState>();
     let (clean_opts, enhancement) = {
         let settings = state.settings.read().unwrap();
         (settings.clean_options(), settings.enhancement.clone())
     };
-    let filtered = crate::cleanup::clean(&raw, &clean_opts);
+    let filtered = crate::cleanup::clean(raw, &clean_opts);
     if filtered.is_empty() || !enhancement.enabled {
         return Ok(filtered);
     }
