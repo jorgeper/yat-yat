@@ -40,6 +40,9 @@ pub struct AppState {
     /// SPEC14 FR-A2: set the moment `finish_recording` begins so an
     /// about-to-start live pass yields the engine to the stop path.
     pub stop_pending: std::sync::atomic::AtomicBool,
+    /// Which dictation is recording (pipeline.rs's generation), so a
+    /// watcher left over from an earlier one can tell and exit.
+    pub recording_generation: std::sync::atomic::AtomicU64,
     /// SPEC14 FR-D3: the in-flight background write of the retained WAV.
     /// Retry must join it before reading — never a partial file.
     wav_write: Mutex<Option<std::thread::JoinHandle<()>>>,
@@ -126,6 +129,7 @@ impl AppState {
             engine: Mutex::new(None),
             rtf: Mutex::new(crate::progress::RtfStore::new(rtf)),
             stop_pending: std::sync::atomic::AtomicBool::new(false),
+            recording_generation: std::sync::atomic::AtomicU64::new(0),
             wav_write: Mutex::new(None),
             chunks: Mutex::new(None),
         }

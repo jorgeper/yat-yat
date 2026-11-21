@@ -16,8 +16,22 @@ pub const TARGET_RATE: u32 = 16_000;
 /// Recordings shorter than 1 s are zero-padded to 1.25 s — tiny buffers make
 /// STT engines misbehave.
 pub const MIN_SAMPLES: usize = (TARGET_RATE as usize) * 5 / 4;
-/// SPEC FR-1.4: recording auto-stops at 5 minutes.
-pub const MAX_RECORD_SECS: u64 = 300;
+/// Recording auto-stops at 15 minutes (SPEC FR-1.4 set 5; raised once
+/// chunked transcription made the wait at stop independent of length).
+pub const MAX_RECORD_SECS: u64 = 900;
+/// …but stays at 5 minutes for an engine that transcribes the whole
+/// recording at stop, where the wait grows with every minute recorded.
+pub const MAX_RECORD_SECS_UNCHUNKED: u64 = 300;
+
+/// The length cap for a dictation, by whether it is transcribed in chunks
+/// while recording (pipeline.rs: Parakeet) or all at stop.
+pub fn max_record_secs(chunked: bool) -> u64 {
+    if chunked {
+        MAX_RECORD_SECS
+    } else {
+        MAX_RECORD_SECS_UNCHUNKED
+    }
+}
 /// SPEC14 FR-D1: after the stream stops, the stop-drain considers the channel
 /// flushed once it has been quiet this long…
 const STOP_QUIET_MS: u64 = 15;
@@ -166,7 +180,8 @@ fn worker(rx: mpsc::Receiver<Cmd>, recording: Arc<AtomicBool>, level_cb: LevelCa
                     captured.push_chunk(rs.process(&chunk));
                 }
             }
-            // Safety cap (SPEC FR-1.4).
+            // Safety cap (SPEC FR-1.4) — the backstop for every engine; the
+            // pipeline stops unchunked dictations earlier (max_record_secs).
             if stream.started.elapsed().as_secs() >= MAX_RECORD_SECS {
                 log::warn!("recording hit {MAX_RECORD_SECS}s cap; auto-stopping capture");
                 // Keep captured audio; stop the stream (dropping it stops
@@ -537,6 +552,16 @@ mod tests {
     fn resample_passthrough_at_16k() {
         let samples = vec![0.5f32; 1000];
         assert_eq!(resample_to_16k(&samples, 16_000).unwrap().len(), 1000);
+    }
+
+    // R49: a chunked dictation may run 15 minutes; one transcribed whole at
+    // stop keeps the original 5.
+    #[test]
+    fn r49_length_cap_follows_how_the_dictation_is_transcribed() {
+        assert_eq!(max_record_secs(true), 15 * 60);
+        assert_eq!(max_record_secs(false), 5 * 60);
+        // The recorder's own backstop is never the shorter of the two.
+        assert!(MAX_RECORD_SECS >= MAX_RECORD_SECS_UNCHUNKED);
     }
 
     // R22: the adaptive stop-drain (SPEC14 FR-D1) — collects everything

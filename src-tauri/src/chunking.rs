@@ -207,6 +207,71 @@ pub fn ends_in_pause(window: &[f32]) -> bool {
     window.len() > pause && quiet_from(window, window.len() - pause)
 }
 
+/// A dictation left running with nothing said for this long stops by itself
+/// and delivers what it has: a forgotten recording must not hold the
+/// microphone open until the length cap.
+pub const AUTO_STOP_SILENCE_SECS: usize = 30;
+/// Audio kept after the last word when a dictation stops on silence.
+const KEEP_AFTER_SPEECH_SECS: usize = 1;
+/// The loud level needs at least this much audio before the silent stretch.
+const SILENCE_REFERENCE_SECS: usize = 1;
+
+/// Watches a recording for a long silence at its end ([`AUTO_STOP_SILENCE_SECS`]).
+/// Fed the audio as it arrives; keeps one energy value per 20 ms frame, so a
+/// 15-minute recording costs 45,000 numbers.
+#[derive(Debug, Default)]
+pub struct SilenceWatch {
+    rms: Vec<f32>,
+    /// Samples short of a whole frame, waiting for the next push.
+    carry: Vec<f32>,
+}
+
+impl SilenceWatch {
+    pub fn push(&mut self, samples: &[f32]) {
+        self.carry.extend_from_slice(samples);
+        let whole = self.carry.len() / FRAME * FRAME;
+        self.rms.extend(frame_rms(&self.carry[..whole]));
+        self.carry.drain(..whole);
+    }
+
+    /// Samples seen so far.
+    pub fn len(&self) -> usize {
+        self.rms.len() * FRAME + self.carry.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// When the recording ends in [`AUTO_STOP_SILENCE_SECS`] of silence: the
+    /// sample to trim it to, shortly after the last sound.
+    ///
+    /// "Loud" is set by the audio BEFORE the silent stretch, by the same
+    /// rule as [`find_cut`] — so room noise under speech counts as silence,
+    /// while a recording that has only ever held steady noise never
+    /// qualifies (nothing says that noise is not the speaker). A few loud
+    /// frames in the stretch are let through ([`BLIP_FRAMES`]).
+    pub fn silent_tail(&self) -> Option<usize> {
+        let window = AUTO_STOP_SILENCE_SECS * RATE / FRAME;
+        let before = self.rms.len().checked_sub(window)?;
+        if before < SILENCE_REFERENCE_SECS * RATE / FRAME {
+            return None;
+        }
+        let mut sorted = self.rms[..before].to_vec();
+        sorted.sort_by(|a, b| a.total_cmp(b));
+        let loud = sorted[(sorted.len() * 95 / 100).min(sorted.len() - 1)];
+        let threshold = (loud * SILENCE_RATIO).max(SILENCE_FLOOR);
+        if self.rms[before..].iter().filter(|&&r| r >= threshold).count() > BLIP_FRAMES {
+            return None;
+        }
+        let last_sound = self.rms[..before]
+            .iter()
+            .rposition(|&r| r >= threshold)
+            .map_or(0, |i| i + 1);
+        Some(last_sound * FRAME + KEEP_AFTER_SPEECH_SECS * RATE)
+    }
+}
+
 /// One chunk ready to transcribe, as sample indices into the buffer given to
 /// [`next_chunk`]: hand the engine `[..end]`, keep the words inside
 /// `[keep_from..keep_to]`. `keep_to` is the new cut.
@@ -498,6 +563,46 @@ mod tests {
 
     fn secs(samples: usize) -> f32 {
         samples as f32 / RATE as f32
+    }
+
+    // R48: a dictation stops by itself after a long silence, and only then.
+    #[test]
+    fn r48_a_long_silence_ends_the_dictation() {
+        let watch = |audio: &[f32]| {
+            let mut w = SilenceWatch::default();
+            w.push(audio);
+            w
+        };
+        let window = AUTO_STOP_SILENCE_SECS as f32;
+
+        // Speech, then silence: nothing until the full window has passed.
+        let spoken = cat(&[speech(5.0), silence(window - 1.0)]);
+        assert_eq!(watch(&spoken).silent_tail(), None);
+        // …then it stops, trimmed to one second after the last word.
+        let done = cat(&[speech(5.0), silence(window)]);
+        assert_eq!(watch(&done).silent_tail(), Some(6 * RATE));
+
+        // A word anywhere in the window keeps the dictation open.
+        let resumed = cat(&[speech(5.0), silence(20.0), speech(0.5), silence(window - 20.0)]);
+        assert_eq!(watch(&resumed).silent_tail(), None);
+        // A click (40 ms) does not.
+        let click = cat(&[speech(5.0), silence(20.0), speech(0.04), silence(window - 20.0)]);
+        assert_eq!(watch(&click).silent_tail(), Some(6 * RATE));
+
+        // Steady noise from the start is never called silence: with nothing
+        // louder to compare against it may be the speaker.
+        let hum: Vec<f32> = silence(window + 10.0).iter().map(|s| s * 20.0).collect();
+        assert_eq!(watch(&hum).silent_tail(), None);
+        // Too little audio before the window to know what loud is.
+        assert_eq!(watch(&silence(window + 0.5)).silent_tail(), None);
+
+        // Fed in uneven pieces, as the recorder delivers it: same answer.
+        let mut pieces = SilenceWatch::default();
+        for piece in done.chunks(1_237) {
+            pieces.push(piece);
+        }
+        assert_eq!(pieces.len(), done.len());
+        assert_eq!(pieces.silent_tail(), Some(6 * RATE));
     }
 
     // R46: when a reading taken while recording may stand in for the tail.
