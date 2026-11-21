@@ -31,10 +31,10 @@ test("E6: waveform animates from level events and switches to transcribing", asy
   });
   await expect.poll(snap, { timeout: 4000 }).not.toBe(before);
 
-  // Switch to transcribing: thinking shimmer replaces the live waveform.
+  // Switch to transcribing: the thinking figure replaces the live waveform.
   await page.evaluate(() => window.__mock!.emit("show-overlay", { state: "transcribing" }));
   await expect(pill).toHaveAttribute("data-state", "transcribing");
-  await expect(page.getByTestId("thinking-wave")).toBeVisible();
+  await expect(page.getByTestId("thinking-fx")).toBeVisible();
   await expect(page.getByTestId("waveform")).not.toBeAttached();
 
   // Hide.

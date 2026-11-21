@@ -11,9 +11,11 @@ import { EMPTY_LIVE, stabilize, type LiveText } from "../lib/liveText";
 import { BAR_COUNT } from "../lib/waveform";
 import { applyTheme } from "./applyTheme";
 import { advance, filledBars } from "./progress";
+import { snapshotCanvas, ThinkingFigure } from "./thinking";
 import { EffectEngine } from "./effects/engine";
 import { DEFAULT_EFFECT, getEffect } from "./effects";
 import FocusPrompt from "./FocusPrompt";
+
 
 type OverlayState =
   | "hidden"
@@ -56,6 +58,11 @@ export default function OverlayApp() {
   const liveRegionRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<EffectEngine | null>(null);
+  const thinkCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const figureRef = useRef<ThinkingFigure | null>(null);
+  // The effect's last frame, kept so the transcribing figure can grow out
+  // of it after the recording canvas unmounts.
+  const snapshotRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     document.body.classList.add("overlay-body");
@@ -99,10 +106,16 @@ export default function OverlayApp() {
             if (state === "transcribing") {
               progressRef.current = 0;
               setProgress(0);
+              snapshotRef.current =
+                stateRef.current === "recording" && canvasRef.current
+                  ? snapshotCanvas(canvasRef.current)
+                  : null;
             }
             if (effect) setEffect(effect);
             if (theme !== undefined) applyTheme(theme);
-            setLive(state === "recording" && live === true);
+            // Transcribing keeps the box the recording used (Rust sends the
+            // recording's live flag back with it).
+            setLive((state === "recording" || state === "transcribing") && live === true);
             stateRef.current = state as OverlayState;
             setState(state as OverlayState);
           },
@@ -175,6 +188,26 @@ export default function OverlayApp() {
       engine.dispose();
     };
   }, [state, effect, live]);
+
+  // While transcribing, the box stays put and the effect's last frame
+  // morphs into the Writing figure (owner-picked 2026-11-20): sparks gather
+  // into a cursor that writes lines of "words". See ./thinking.ts.
+  useEffect(() => {
+    if (state !== "transcribing" || !thinkCanvasRef.current) return;
+    const figure = new ThinkingFigure(thinkCanvasRef.current);
+    figureRef.current = figure;
+    figure.setProgress(progressRef.current);
+    figure.start(snapshotRef.current);
+    return () => {
+      figureRef.current = null;
+      figure.dispose();
+    };
+  }, [state, live]);
+
+  // The cursor's position is the progress read-out — no bar.
+  useEffect(() => {
+    figureRef.current?.setProgress(progress);
+  }, [progress]);
 
   useEffect(() => {
     if (state !== "recording") return;
@@ -289,11 +322,31 @@ export default function OverlayApp() {
         </>
       )}
       {state === "transcribing" && (
-        <div className="wave thinking" data-testid="thinking-wave">
-          {Array.from({ length: BAR_COUNT }, (_, i) => (
-            <i key={i} className={i < filledBars(progress, BAR_COUNT) ? "fill" : ""} />
-          ))}
-        </div>
+        <>
+          {live && hasLiveText && (
+            <div className="live-text masked" data-testid="thinking-text">
+              <p>
+                {liveText.stable}
+                {liveText.stable && liveText.tentative ? " " : ""}
+                <span className="live-tentative">{liveText.tentative}</span>
+              </p>
+            </div>
+          )}
+          <div className="pill-row">
+            <span className="rec-dot thinking-dot" />
+            <canvas
+              className="fx-canvas"
+              data-testid="thinking-fx"
+              data-fill={filledBars(progress, BAR_COUNT)}
+              data-fill-total={BAR_COUNT}
+              ref={thinkCanvasRef}
+            />
+            <span className="pill-timer">
+              {mm}:{ss}
+            </span>
+            <span className="pill-cancel-space" />
+          </div>
+        </>
       )}
       {state === "nothing-heard" && <span className="pill-label">Nothing heard</span>}
       {state === "focus-changed" && (
