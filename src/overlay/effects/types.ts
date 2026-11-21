@@ -2,7 +2,8 @@
 // this is also the future plugin interface, so keep it frozen-ish.
 //
 // Color rule: every draw color comes from `frame.colors` (resolved from the
-// active theme's CSS variables). Effects express transparency/glow through
+// active theme's CSS variables). Since 2026-11-20 that includes `ramp`, a
+// multi-hue gradient, and `blend`, the layer-compositing mode. Effects express transparency/glow through
 // ctx.globalAlpha / shadowBlur + shadowColor — never by inventing colors.
 // U8 enforces this at the source level (no color literals in effect modules).
 
@@ -13,6 +14,17 @@ export interface EffectColors {
   accent: string;
   /** --nh-fx-glow */
   glow: string;
+  /**
+   * The theme's color ramp, already expanded by the engine into a smooth
+   * gradient (src/overlay/ramp.ts) — index it with rampAt(). From
+   * `--nh-fx-ramp`, or primary→accent when a theme defines none.
+   */
+  ramp: readonly string[];
+  /**
+   * How overlapping layers should combine for this theme (`--nh-fx-blend`):
+   * additive on dark themes, darkening on light ones, plain otherwise.
+   */
+  blend: GlobalCompositeOperation;
 }
 
 export interface EffectFrame {
@@ -45,6 +57,13 @@ export interface EffectDef {
 // Shared math helpers (no colors in here — theme owns all color).
 export const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/** The ramp color at position t (0..1); the primary when there is no ramp. */
+export function rampAt(colors: EffectColors, t: number): string {
+  const ramp = colors.ramp;
+  if (!ramp || ramp.length === 0) return colors.primary;
+  return ramp[Math.round(clamp01(t) * (ramp.length - 1))];
+}
 
 /**
  * Level for bar `i` of `count`: the newest `count` entries of `levels`,

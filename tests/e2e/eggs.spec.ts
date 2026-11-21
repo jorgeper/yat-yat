@@ -49,15 +49,15 @@ test("E17a: 'dance' in the raw stream wiggles the pill and the tray; plain text 
   ).toBe(1);
 });
 
-test("E17b: Konami unlocks Yat95 (outside the 26-theme picker) and toggles back", async ({
+test("E17b: Konami unlocks Yat95 (outside the 10-theme picker) and toggles back", async ({
   page,
 }) => {
   await page.goto("/");
   await expect(page.getByTestId("settings-root")).toBeVisible();
 
-  // The picker shows exactly 26 built-in swatches before...
+  // The picker shows exactly 10 built-in swatches before...
   await page.getByTestId("nav-appearance").click();
-  await expect(page.getByTestId("theme-picker").locator("[data-testid^=theme-]")).toHaveCount(26);
+  await expect(page.getByTestId("theme-picker").locator("[data-testid^=theme-]")).toHaveCount(10);
 
   for (const key of KONAMI_KEYS) await page.keyboard.press(key);
   await expect(page.getByTestId("egg-toast")).toBeVisible();
@@ -70,8 +70,8 @@ test("E17b: Konami unlocks Yat95 (outside the 26-theme picker) and toggles back"
     }),
   ).toBe("secret:yat95");
 
-  // ...and still exactly 26 after — the secret never joins the list.
-  await expect(page.getByTestId("theme-picker").locator("[data-testid^=theme-]")).toHaveCount(26);
+  // ...and still exactly 10 after — the secret never joins the list.
+  await expect(page.getByTestId("theme-picker").locator("[data-testid^=theme-]")).toHaveCount(10);
 
   // Konami again restores the previous theme.
   for (const key of KONAMI_KEYS) await page.keyboard.press(key);
@@ -81,7 +81,7 @@ test("E17b: Konami unlocks Yat95 (outside the 26-theme picker) and toggles back"
       const last = calls[calls.length - 1]?.args?.settings as { overlay_theme?: string };
       return last?.overlay_theme ?? null;
     }),
-  ).toBe("indigo");
+  ).toBe("midnight");
 });
 
 test("E17c: 20 s of silence puts the waveform to sleep; one loud sample wakes it", async ({

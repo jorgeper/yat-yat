@@ -9,8 +9,16 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
 
 pub const OVERLAY_LABEL: &str = "overlay";
-pub const OVERLAY_WIDTH: f64 = 320.0;
-pub const OVERLAY_HEIGHT: f64 = 64.0;
+/// The recording box (owner-requested 2026-11-20: smaller, gentler corners
+/// than the original 320 x 64 capsule). `overlay_size` picks between these.
+pub const OVERLAY_WIDTH: f64 = 288.0;
+pub const OVERLAY_HEIGHT: f64 = 56.0;
+pub const OVERLAY_COMPACT_WIDTH: f64 = 248.0;
+pub const OVERLAY_COMPACT_HEIGHT: f64 = 52.0;
+/// States that carry a sentence or buttons (no-model, focus prompt) keep the
+/// original roomier box at either size setting.
+pub const OVERLAY_NOTICE_WIDTH: f64 = 320.0;
+pub const OVERLAY_NOTICE_HEIGHT: f64 = 64.0;
 /// Taller pill for live transcription (SPEC3 FR-L3): text above the waveform.
 pub const OVERLAY_LIVE_WIDTH: f64 = 420.0;
 pub const OVERLAY_LIVE_HEIGHT: f64 = 110.0;
@@ -167,6 +175,19 @@ pub fn show_focus_prompt(app: &AppHandle, from_app: &str, to_app: &str) {
     );
 }
 
+/// Window size for the non-live, non-prompt states: the recording box follows
+/// the `overlay_size` setting ("compact", anything else = regular); the
+/// no-model notice keeps the roomier box because it holds a button.
+pub fn box_size(state: &str, overlay_size: &str) -> (f64, f64) {
+    if state == state::NO_MODEL {
+        (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT)
+    } else if overlay_size == "compact" {
+        (OVERLAY_COMPACT_WIDTH, OVERLAY_COMPACT_HEIGHT)
+    } else {
+        (OVERLAY_WIDTH, OVERLAY_HEIGHT)
+    }
+}
+
 fn show_internal(
     app: &AppHandle,
     state: &str,
@@ -179,9 +200,14 @@ fn show_internal(
     let (width, height) = if live {
         (OVERLAY_LIVE_WIDTH, OVERLAY_LIVE_HEIGHT)
     } else if state == state::FOCUS_CHANGED {
-        (OVERLAY_FOCUS_WIDTH, OVERLAY_HEIGHT)
+        (OVERLAY_FOCUS_WIDTH, OVERLAY_NOTICE_HEIGHT)
     } else {
-        (OVERLAY_WIDTH, OVERLAY_HEIGHT)
+        let size = {
+            let app_state = app.state::<crate::state::AppState>();
+            let settings = app_state.settings.read().unwrap();
+            settings.overlay_size.clone()
+        };
+        box_size(state, &size)
     };
     if let Some(window) = app.get_webview_window(OVERLAY_LABEL) {
         let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width, height }));
@@ -285,4 +311,27 @@ pub fn emit_stream_text(app: &AppHandle, text: &str) {
         "stream-text",
         serde_json::json!({ "text": text }),
     );
+}
+
+#[cfg(test)]
+mod size_tests {
+    use super::*;
+
+    // R50 (owner-requested 2026-11-20): the recording box follows the
+    // overlay_size setting, unknown values read as regular, the no-model
+    // notice keeps its roomier box, and legacy settings JSON loads regular.
+    #[test]
+    fn r50_box_size_follows_setting_and_legacy_json_is_regular() {
+        assert_eq!(box_size(state::RECORDING, "regular"), (288.0, 56.0));
+        assert_eq!(box_size(state::RECORDING, "compact"), (248.0, 52.0));
+        assert_eq!(box_size(state::TRANSCRIBING, "compact"), (248.0, 52.0));
+        assert_eq!(box_size(state::RECORDING, "nonsense"), (288.0, 56.0));
+        assert_eq!(box_size(state::RECORDING, ""), (288.0, 56.0));
+        assert_eq!(box_size(state::NO_MODEL, "compact"), (320.0, 64.0));
+
+        let legacy: crate::settings::Settings =
+            serde_json::from_str(r#"{"hotkey":"command_right"}"#).unwrap();
+        assert_eq!(legacy.overlay_size, "regular");
+        assert_eq!(crate::settings::Settings::default().overlay_size, "regular");
+    }
 }

@@ -30,6 +30,8 @@ export interface Settings {
   whisper_language: string;
   overlay_effect: string;
   overlay_theme: string;
+  // "regular" or "compact" — the recording box's size.
+  overlay_size: string;
   focus_guard: boolean;
   sound_cues: boolean;
   easter_eggs: boolean;
@@ -156,8 +158,9 @@ export function defaultSettings(): Settings {
     // SPEC3 FR-L1 — see the ARCHITECTURE.md divergence note).
     live_transcription: false,
     whisper_language: "auto",
-    overlay_effect: "classic-bars",
-    overlay_theme: "indigo",
+    overlay_effect: "ribbon",
+    overlay_theme: "midnight",
+    overlay_size: "regular",
     focus_guard: true,
     sound_cues: true,
     easter_eggs: true,

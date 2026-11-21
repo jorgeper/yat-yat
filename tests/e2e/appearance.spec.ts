@@ -10,23 +10,23 @@ test("E13a: pickers render, persist, and survive a reload", async ({ page }) => 
 
   await expect(page.getByTestId("appearance-preview")).toBeVisible();
   await expect(page.getByTestId("preview-canvas")).toBeVisible();
-  await expect(page.getByTestId("effect-picker").locator("button")).toHaveCount(29);
-  await expect(page.getByTestId("theme-picker").locator("button")).toHaveCount(26);
+  await expect(page.getByTestId("effect-picker").locator("button")).toHaveCount(7);
+  await expect(page.getByTestId("theme-picker").locator("button")).toHaveCount(10);
 
   // Defaults selected.
-  await expect(page.getByTestId("effect-classic-bars")).toHaveClass(/selected/);
-  await expect(page.getByTestId("theme-indigo")).toHaveClass(/selected/);
+  await expect(page.getByTestId("effect-ribbon")).toHaveClass(/selected/);
+  await expect(page.getByTestId("theme-midnight")).toHaveClass(/selected/);
 
-  await page.getByTestId("effect-pulse-orb").click();
-  await page.getByTestId("theme-dracula").click();
-  await expect(page.getByTestId("effect-pulse-orb")).toHaveClass(/selected/);
-  await expect(page.getByTestId("theme-dracula")).toHaveClass(/selected/);
+  await page.getByTestId("effect-halftone").click();
+  await page.getByTestId("theme-lagoon").click();
+  await expect(page.getByTestId("effect-halftone")).toHaveClass(/selected/);
+  await expect(page.getByTestId("theme-lagoon")).toHaveClass(/selected/);
 
   // Survives a reload (mock persists settings per-tab).
   await page.reload();
   await page.getByTestId("nav-appearance").click();
-  await expect(page.getByTestId("effect-pulse-orb")).toHaveClass(/selected/);
-  await expect(page.getByTestId("theme-dracula")).toHaveClass(/selected/);
+  await expect(page.getByTestId("effect-halftone")).toHaveClass(/selected/);
+  await expect(page.getByTestId("theme-lagoon")).toHaveClass(/selected/);
 });
 
 test("E13b: the overlay applies the effect and theme from the show payload", async ({
@@ -39,15 +39,15 @@ test("E13b: the overlay applies the effect and theme from the show payload", asy
     window.__mock!.emit("show-overlay", {
       state: "recording",
       live: false,
-      effect: "pulse-orb",
-      theme: "dracula",
+      effect: "halftone",
+      theme: "lagoon",
     }),
   );
   const pill = page.getByTestId("overlay-pill");
-  await expect(pill).toHaveAttribute("data-effect", "pulse-orb");
+  await expect(pill).toHaveAttribute("data-effect", "halftone");
   await expect(page.getByTestId("waveform")).toBeVisible(); // the canvas
 
-  // Dracula's --nh-fx-primary lands on the pill root.
+  // Lagoon's --nh-fx-primary lands on the pill root.
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -55,7 +55,7 @@ test("E13b: the overlay applies the effect and theme from the show payload", asy
         return getComputedStyle(el).getPropertyValue("--nh-fx-primary").trim();
       }),
     )
-    .toBe("#bd93f9");
+    .toBe("#4fc3d9");
 
   // The canvas actually animates (pixels change between frames).
   const snap = () =>

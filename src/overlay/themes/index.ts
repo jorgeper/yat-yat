@@ -1,8 +1,9 @@
-// The built-in theme catalog (SPEC6 FR-A3, SPEC16 FR-T): 26 themes, each
-// defining the full CSS-variable contract on `.nh-theme` (the pill root and
-// the settings preview both carry that class). Swatches feed the picker
-// grid. The last fourteen are the SPEC16 cinema-mode partners — riff-named,
-// system font stacks only.
+// The built-in color catalog (owner-requested 2026-11-20, replacing the
+// SPEC6 FR-A3 / SPEC16 FR-T sets): 10 themes, each defining the full
+// CSS-variable contract on `.nh-theme` (the pill root and the settings
+// preview both carry that class) plus the optional ramp variables. A theme
+// is a COLOR only — any of them pairs with any effect. System font stacks
+// only.
 
 export interface ThemeDef {
   id: string;
@@ -10,14 +11,48 @@ export interface ThemeDef {
   variant: "light" | "dark";
   css: string;
   swatch: { bg: string; primary: string; accent: string; text: string };
+  /** The color ramp effects draw with, for the picker's swatch strip. */
+  ramp: string[];
 }
 
-function theme(
-  id: string,
-  name: string,
-  variant: "light" | "dark",
-  vars: Record<string, string>,
-): ThemeDef {
+interface ThemeSpec {
+  bg: string;
+  border: string;
+  text: string;
+  recDot: string;
+  /** 3–6 hues; effects sample a smooth gradient through them. */
+  ramp: string[];
+  font: string;
+  /** Overrides the pill's default soft drop shadow. */
+  shadow?: string;
+}
+
+/** `#rrggbb` → `rgba(r, g, b, a)`. */
+function alpha(hex: string, a: number): string {
+  const n = (i: number) => parseInt(hex.slice(i, i + 2), 16);
+  return `rgba(${n(1)}, ${n(3)}, ${n(5)}, ${a})`;
+}
+
+function theme(id: string, name: string, variant: "light" | "dark", spec: ThemeSpec): ThemeDef {
+  const primary = spec.ramp[0];
+  const accent = spec.ramp[1];
+  const vars: Record<string, string> = {
+    "--nh-pill-bg": spec.bg,
+    "--nh-pill-border": spec.border,
+    "--nh-text": spec.text,
+    "--nh-tentative-opacity": "0.55",
+    "--nh-placeholder": alpha(spec.text, 0.45),
+    "--nh-timer": alpha(spec.text, 0.75),
+    "--nh-rec-dot": spec.recDot,
+    "--nh-fx-primary": primary,
+    "--nh-fx-accent": accent,
+    "--nh-fx-glow": alpha(primary, 0.8),
+    "--nh-fx-ramp": spec.ramp.join(", "),
+    // Overlapping layers add light on dark pills and deepen on light ones.
+    "--nh-fx-blend": variant === "dark" ? "lighter" : "multiply",
+    "--nh-font": spec.font,
+  };
+  if (spec.shadow) vars["--nh-pill-shadow"] = spec.shadow;
   const css = `.nh-theme {\n${Object.entries(vars)
     .map(([k, v]) => `  ${k}: ${v};`)
     .join("\n")}\n}`;
@@ -26,361 +61,110 @@ function theme(
     name,
     variant,
     css,
-    swatch: {
-      bg: vars["--nh-pill-bg"],
-      primary: vars["--nh-fx-primary"],
-      accent: vars["--nh-fx-accent"],
-      text: vars["--nh-text"],
-    },
+    swatch: { bg: spec.bg, primary, accent, text: spec.text },
+    ramp: spec.ramp,
   };
 }
 
 const SANS = `-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif`;
+const ROUNDED = `ui-rounded, "SF Pro Rounded", -apple-system, "Segoe UI", system-ui, sans-serif`;
 const MONO = `ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace`;
 const SERIF = `"Iowan Old Style", "Palatino", Georgia, serif`;
-const CONDENSED = `"Avenir Next Condensed", "Arial Narrow", "Segoe UI", system-ui, sans-serif`;
+const GENEVA = `Geneva, Verdana, "Segoe UI", sans-serif`;
 
-export const DEFAULT_THEME = "indigo";
+export const DEFAULT_THEME = "midnight";
 
 export const THEMES: ThemeDef[] = [
-  theme("indigo", "Indigo", "dark", {
-    "--nh-pill-bg": "rgba(22, 22, 26, 0.86)",
-    "--nh-pill-border": "rgba(255, 255, 255, 0.14)",
-    "--nh-text": "#f5f5f7",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(245, 245, 247, 0.45)",
-    "--nh-timer": "rgba(245, 245, 247, 0.75)",
-    "--nh-rec-dot": "#ff453a",
-    "--nh-fx-primary": "#8a93ff",
-    "--nh-fx-accent": "#b8beff",
-    "--nh-fx-glow": "rgba(122, 132, 255, 0.8)",
-    "--nh-font": SANS,
+  // A modern terminal: soft syntax colors on navy, monospace.
+  theme("midnight", "Midnight", "dark", {
+    bg: "rgba(18, 20, 32, 0.92)",
+    border: "#2f3552",
+    text: "#c8d0f0",
+    recDot: "#ff7d95",
+    ramp: ["#7aa8ff", "#7fd6ff", "#a4d873", "#e6b673", "#b99cff", "#ff7d95"],
+    font: MONO,
   }),
-  theme("phosphor", "Phosphor", "dark", {
-    "--nh-pill-bg": "rgba(4, 14, 6, 0.92)",
-    "--nh-pill-border": "rgba(51, 255, 102, 0.25)",
-    "--nh-text": "#4dff88",
-    "--nh-tentative-opacity": "0.5",
-    "--nh-placeholder": "rgba(77, 255, 136, 0.4)",
-    "--nh-timer": "rgba(77, 255, 136, 0.7)",
-    "--nh-rec-dot": "#4dff88",
-    "--nh-fx-primary": "#33ff66",
-    "--nh-fx-accent": "#ccffcc",
-    "--nh-fx-glow": "rgba(51, 255, 102, 0.9)",
-    "--nh-font": MONO,
+  // Pastel oranges on espresso.
+  theme("apricot", "Apricot", "dark", {
+    bg: "rgba(31, 20, 16, 0.92)",
+    border: "#5a3a2a",
+    text: "#ffeede",
+    recDot: "#ff7a59",
+    ramp: ["#ff9e6b", "#ffb98a", "#ffd3a8", "#ffe7c4", "#ff8fa0"],
+    font: ROUNDED,
   }),
-  theme("amber-terminal", "Amber Terminal", "dark", {
-    "--nh-pill-bg": "rgba(18, 10, 2, 0.92)",
-    "--nh-pill-border": "rgba(255, 176, 0, 0.28)",
-    "--nh-text": "#ffb000",
-    "--nh-tentative-opacity": "0.5",
-    "--nh-placeholder": "rgba(255, 176, 0, 0.4)",
-    "--nh-timer": "rgba(255, 176, 0, 0.7)",
-    "--nh-rec-dot": "#ff5c00",
-    "--nh-fx-primary": "#ffb000",
-    "--nh-fx-accent": "#ffe08a",
-    "--nh-fx-glow": "rgba(255, 176, 0, 0.85)",
-    "--nh-font": MONO,
+  // 1984 desktop: ink on paper, hard drop shadow.
+  theme("one-bit", "One-Bit", "light", {
+    bg: "rgba(255, 255, 255, 0.97)",
+    border: "#0a0a0a",
+    text: "#0a0a0a",
+    recDot: "#0a0a0a",
+    ramp: ["#0a0a0a", "#0a0a0a", "#5e5e5e", "#0a0a0a"],
+    font: GENEVA,
+    shadow: "2.5px 2.5px 0 #0a0a0a",
   }),
-  theme("vaporwave", "Vaporwave", "dark", {
-    "--nh-pill-bg": "rgba(24, 10, 38, 0.9)",
-    "--nh-pill-border": "rgba(255, 113, 206, 0.35)",
-    "--nh-text": "#fdf6ff",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(253, 246, 255, 0.45)",
-    "--nh-timer": "#01cdfe",
-    "--nh-rec-dot": "#ff71ce",
-    "--nh-fx-primary": "#ff71ce",
-    "--nh-fx-accent": "#01cdfe",
-    "--nh-fx-glow": "rgba(185, 103, 255, 0.9)",
-    "--nh-font": SANS,
+  // Ivory paper, clay, kraft and slate, in a serif.
+  theme("clay", "Clay", "light", {
+    bg: "rgba(240, 238, 230, 0.95)",
+    border: "#d6d0c1",
+    text: "#1f1e1d",
+    recDot: "#d97757",
+    ramp: ["#d97757", "#c6613f", "#d4a27f", "#3d3d3a"],
+    font: SERIF,
   }),
-  theme("nord", "Nord", "dark", {
-    "--nh-pill-bg": "rgba(46, 52, 64, 0.92)",
-    "--nh-pill-border": "rgba(216, 222, 233, 0.15)",
-    "--nh-text": "#eceff4",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(236, 239, 244, 0.4)",
-    "--nh-timer": "#81a1c1",
-    "--nh-rec-dot": "#bf616a",
-    "--nh-fx-primary": "#88c0d0",
-    "--nh-fx-accent": "#ebcb8b",
-    "--nh-fx-glow": "rgba(136, 192, 208, 0.7)",
-    "--nh-font": SANS,
+  // System greys on dark glass with one highlight; low contrast.
+  theme("graphite", "Graphite", "dark", {
+    bg: "rgba(30, 30, 32, 0.8)",
+    border: "rgba(255, 255, 255, 0.14)",
+    text: "#f5f5f7",
+    recDot: "#ff453a",
+    ramp: ["#8e8e93", "#c7c7cc", "#e5e5ea", "#0a84ff"],
+    font: SANS,
   }),
-  theme("dracula", "Dracula", "dark", {
-    "--nh-pill-bg": "rgba(40, 42, 54, 0.92)",
-    "--nh-pill-border": "rgba(189, 147, 249, 0.25)",
-    "--nh-text": "#f8f8f2",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(248, 248, 242, 0.4)",
-    "--nh-timer": "#6272a4",
-    "--nh-rec-dot": "#ff5555",
-    "--nh-fx-primary": "#bd93f9",
-    "--nh-fx-accent": "#50fa7b",
-    "--nh-fx-glow": "rgba(189, 147, 249, 0.8)",
-    "--nh-font": SANS,
+  // Six pastels end to end on plum.
+  theme("sorbet", "Sorbet", "dark", {
+    bg: "rgba(28, 26, 36, 0.9)",
+    border: "#3d3850",
+    text: "#f4f0fa",
+    recDot: "#ffadc6",
+    ramp: ["#ffadc6", "#ffc9a3", "#fff0a8", "#b5f0c0", "#a8dcff", "#cdb8ff"],
+    font: ROUNDED,
   }),
-  theme("solarized-dark", "Solarized Dark", "dark", {
-    "--nh-pill-bg": "rgba(0, 43, 54, 0.93)",
-    "--nh-pill-border": "rgba(131, 148, 150, 0.2)",
-    "--nh-text": "#93a1a1",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(147, 161, 161, 0.4)",
-    "--nh-timer": "#586e75",
-    "--nh-rec-dot": "#dc322f",
-    "--nh-fx-primary": "#2aa198",
-    "--nh-fx-accent": "#b58900",
-    "--nh-fx-glow": "rgba(42, 161, 152, 0.7)",
-    "--nh-font": SANS,
+  // Pastel aquas over deep teal.
+  theme("lagoon", "Lagoon", "dark", {
+    bg: "rgba(6, 32, 42, 0.9)",
+    border: "#14495c",
+    text: "#dcf7fb",
+    recDot: "#ff9a9a",
+    ramp: ["#4fc3d9", "#7fe7f2", "#a8f3e6", "#c9f7ff", "#8fb8ff"],
+    font: SANS,
   }),
-  theme("solarized-light", "Solarized Light", "light", {
-    "--nh-pill-bg": "rgba(253, 246, 227, 0.95)",
-    "--nh-pill-border": "rgba(101, 123, 131, 0.25)",
-    "--nh-text": "#657b83",
-    "--nh-tentative-opacity": "0.5",
-    "--nh-placeholder": "rgba(101, 123, 131, 0.45)",
-    "--nh-timer": "#93a1a1",
-    "--nh-rec-dot": "#dc322f",
-    "--nh-fx-primary": "#268bd2",
-    "--nh-fx-accent": "#cb4b16",
-    "--nh-fx-glow": "rgba(38, 139, 210, 0.5)",
-    "--nh-font": SANS,
+  // Rose through hot pink on blush paper.
+  theme("peony", "Peony", "light", {
+    bg: "rgba(255, 240, 244, 0.95)",
+    border: "#f3bfcf",
+    text: "#5a1830",
+    recDot: "#e0245e",
+    ramp: ["#d63a7a", "#ff5c93", "#ff8fb3", "#ffb8cf", "#ff9e7a"],
+    font: ROUNDED,
   }),
-  theme("rose-pine", "Rosé Pine", "dark", {
-    "--nh-pill-bg": "rgba(25, 23, 36, 0.92)",
-    "--nh-pill-border": "rgba(196, 167, 231, 0.22)",
-    "--nh-text": "#e0def4",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(224, 222, 244, 0.4)",
-    "--nh-timer": "#908caa",
-    "--nh-rec-dot": "#eb6f92",
-    "--nh-fx-primary": "#c4a7e7",
-    "--nh-fx-accent": "#f6c177",
-    "--nh-fx-glow": "rgba(196, 167, 231, 0.75)",
-    "--nh-font": SANS,
+  // Lavender, lilac and periwinkle on indigo.
+  theme("wisteria", "Wisteria", "dark", {
+    bg: "rgba(23, 19, 41, 0.9)",
+    border: "#3a2f63",
+    text: "#ece6ff",
+    recDot: "#ff7ab8",
+    ramp: ["#8f7bff", "#b79cff", "#d7c4ff", "#f0a8ff", "#7fa8ff"],
+    font: SANS,
   }),
-  theme("catppuccin-mocha", "Catppuccin Mocha", "dark", {
-    "--nh-pill-bg": "rgba(30, 30, 46, 0.92)",
-    "--nh-pill-border": "rgba(203, 166, 247, 0.22)",
-    "--nh-text": "#cdd6f4",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(205, 214, 244, 0.4)",
-    "--nh-timer": "#9399b2",
-    "--nh-rec-dot": "#f38ba8",
-    "--nh-fx-primary": "#cba6f7",
-    "--nh-fx-accent": "#94e2d5",
-    "--nh-fx-glow": "rgba(203, 166, 247, 0.75)",
-    "--nh-font": SANS,
-  }),
-  theme("newsprint", "Newsprint", "light", {
-    "--nh-pill-bg": "rgba(247, 244, 237, 0.96)",
-    "--nh-pill-border": "rgba(40, 38, 35, 0.3)",
-    "--nh-text": "#282623",
-    "--nh-tentative-opacity": "0.45",
-    "--nh-placeholder": "rgba(40, 38, 35, 0.4)",
-    "--nh-timer": "rgba(40, 38, 35, 0.6)",
-    "--nh-rec-dot": "#a02c2c",
-    "--nh-fx-primary": "#3d3a35",
-    "--nh-fx-accent": "#a02c2c",
-    "--nh-fx-glow": "rgba(61, 58, 53, 0.35)",
-    "--nh-font": SERIF,
-  }),
-  theme("high-contrast", "High Contrast", "dark", {
-    "--nh-pill-bg": "rgba(0, 0, 0, 0.97)",
-    "--nh-pill-border": "#ffffff",
-    "--nh-text": "#ffffff",
-    "--nh-tentative-opacity": "0.7",
-    "--nh-placeholder": "rgba(255, 255, 255, 0.6)",
-    "--nh-timer": "#ffffff",
-    "--nh-rec-dot": "#ff2d55",
-    "--nh-fx-primary": "#ffffff",
-    "--nh-fx-accent": "#ffe600",
-    "--nh-fx-glow": "rgba(255, 255, 255, 0.9)",
-    "--nh-font": SANS,
-  }),
-  // --- SPEC16 cinema-mode partners ------------------------------------
-  theme("night-scanner", "Night Scanner", "dark", {
-    "--nh-pill-bg": "rgba(10, 8, 8, 0.94)",
-    "--nh-pill-border": "rgba(255, 45, 45, 0.3)",
-    "--nh-text": "#f2e8e8",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(242, 232, 232, 0.4)",
-    "--nh-timer": "rgba(255, 138, 128, 0.8)",
-    "--nh-rec-dot": "#ff2d2d",
-    "--nh-fx-primary": "#ff2d2d",
-    "--nh-fx-accent": "#ff8a80",
-    "--nh-fx-glow": "rgba(255, 45, 45, 0.9)",
-    "--nh-font": SANS,
-  }),
-  theme("war-room", "War Room", "dark", {
-    "--nh-pill-bg": "rgba(2, 10, 4, 0.95)",
-    "--nh-pill-border": "rgba(88, 255, 155, 0.22)",
-    "--nh-text": "#58ff9b",
-    "--nh-tentative-opacity": "0.5",
-    "--nh-placeholder": "rgba(88, 255, 155, 0.4)",
-    "--nh-timer": "#ffb000",
-    "--nh-rec-dot": "#ffb000",
-    "--nh-fx-primary": "#58ff9b",
-    "--nh-fx-accent": "#ffb000",
-    "--nh-fx-glow": "rgba(88, 255, 155, 0.85)",
-    "--nh-font": MONO,
-  }),
-  theme("grid-rider", "Grid Rider", "dark", {
-    "--nh-pill-bg": "rgba(2, 6, 12, 0.94)",
-    "--nh-pill-border": "rgba(0, 229, 255, 0.3)",
-    "--nh-text": "#dff8ff",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(223, 248, 255, 0.4)",
-    "--nh-timer": "#ff9f1c",
-    "--nh-rec-dot": "#ff9f1c",
-    "--nh-fx-primary": "#00e5ff",
-    "--nh-fx-accent": "#ff9f1c",
-    "--nh-fx-glow": "rgba(0, 229, 255, 0.85)",
-    "--nh-font": SANS,
-  }),
-  theme("time-circuits", "Time Circuits", "dark", {
-    "--nh-pill-bg": "rgba(28, 30, 34, 0.94)",
-    "--nh-pill-border": "rgba(255, 179, 0, 0.3)",
-    "--nh-text": "#f0f0f2",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(240, 240, 242, 0.4)",
-    "--nh-timer": "#34c759",
-    "--nh-rec-dot": "#ff3b30",
-    "--nh-fx-primary": "#ff3b30",
-    "--nh-fx-accent": "#34c759",
-    "--nh-fx-glow": "rgba(255, 179, 0, 0.8)",
-    "--nh-font": MONO,
-  }),
-  theme("motion-tracker", "Motion Tracker", "dark", {
-    "--nh-pill-bg": "rgba(6, 12, 8, 0.95)",
-    "--nh-pill-border": "rgba(155, 255, 87, 0.25)",
-    "--nh-text": "#cfe8c0",
-    "--nh-tentative-opacity": "0.5",
-    "--nh-placeholder": "rgba(207, 232, 192, 0.4)",
-    "--nh-timer": "rgba(155, 255, 87, 0.75)",
-    "--nh-rec-dot": "#9bff57",
-    "--nh-fx-primary": "#9bff57",
-    "--nh-fx-accent": "#d7ffb0",
-    "--nh-fx-glow": "rgba(155, 255, 87, 0.9)",
-    "--nh-font": MONO,
-  }),
-  theme("liquid-metal", "Liquid Metal", "dark", {
-    "--nh-pill-bg": "rgba(14, 16, 20, 0.94)",
-    "--nh-pill-border": "rgba(199, 204, 214, 0.3)",
-    "--nh-text": "#e8ebf0",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(232, 235, 240, 0.4)",
-    "--nh-timer": "rgba(199, 204, 214, 0.75)",
-    "--nh-rec-dot": "#78a0ff",
-    "--nh-fx-primary": "#c7ccd6",
-    "--nh-fx-accent": "#eef1f6",
-    "--nh-fx-glow": "rgba(120, 160, 255, 0.6)",
-    "--nh-font": SANS,
-  }),
-  theme("glyph-rain", "Glyph Rain", "dark", {
-    "--nh-pill-bg": "rgba(0, 8, 2, 0.95)",
-    "--nh-pill-border": "rgba(0, 255, 65, 0.25)",
-    "--nh-text": "#b6ffc9",
-    "--nh-tentative-opacity": "0.5",
-    "--nh-placeholder": "rgba(182, 255, 201, 0.4)",
-    "--nh-timer": "rgba(0, 255, 65, 0.7)",
-    "--nh-rec-dot": "#00ff41",
-    "--nh-fx-primary": "#00ff41",
-    "--nh-fx-accent": "#b6ffc9",
-    "--nh-fx-glow": "rgba(0, 255, 65, 0.9)",
-    "--nh-font": MONO,
-  }),
-  theme("the-valley", "The Valley", "light", {
-    "--nh-pill-bg": "rgba(121, 200, 255, 0.97)",
-    "--nh-pill-border": "rgba(61, 40, 23, 0.6)",
-    "--nh-text": "#3d2817",
-    "--nh-tentative-opacity": "0.5",
-    "--nh-placeholder": "rgba(61, 40, 23, 0.5)",
-    "--nh-timer": "rgba(61, 40, 23, 0.75)",
-    "--nh-rec-dot": "#e04949",
-    "--nh-fx-primary": "#3f9b2f",
-    "--nh-fx-accent": "#ffd24a",
-    "--nh-fx-glow": "rgba(255, 255, 255, 0.95)",
-    "--nh-font": MONO,
-  }),
-  theme("arc-hud", "Arc HUD", "dark", {
-    "--nh-pill-bg": "rgba(6, 10, 16, 0.9)",
-    "--nh-pill-border": "rgba(100, 210, 255, 0.35)",
-    "--nh-text": "#d9f2ff",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(217, 242, 255, 0.4)",
-    "--nh-timer": "rgba(100, 210, 255, 0.8)",
-    "--nh-rec-dot": "#64d2ff",
-    "--nh-fx-primary": "#64d2ff",
-    "--nh-fx-accent": "#a8e6ff",
-    "--nh-fx-glow": "rgba(100, 210, 255, 0.9)",
-    "--nh-font": SANS,
-  }),
-  theme("companion", "Companion", "dark", {
-    "--nh-pill-bg": "rgba(38, 40, 44, 0.95)",
-    "--nh-pill-border": "rgba(242, 242, 242, 0.2)",
-    "--nh-text": "#f2f2f2",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(242, 242, 242, 0.4)",
-    "--nh-timer": "rgba(255, 214, 10, 0.8)",
-    "--nh-rec-dot": "#ffd60a",
-    "--nh-fx-primary": "#ffd60a",
-    "--nh-fx-accent": "#f2f2f2",
-    "--nh-fx-glow": "rgba(255, 214, 10, 0.6)",
-    "--nh-font": SANS,
-  }),
-  theme("bridge-66", "Bridge '66", "dark", {
-    "--nh-pill-bg": "rgba(12, 12, 14, 0.95)",
-    "--nh-pill-border": "rgba(255, 204, 0, 0.25)",
-    "--nh-text": "#f5f5f7",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(245, 245, 247, 0.4)",
-    "--nh-timer": "#40e0d0",
-    "--nh-rec-dot": "#ff453a",
-    "--nh-fx-primary": "#ff453a",
-    "--nh-fx-accent": "#ffcc00",
-    "--nh-fx-glow": "rgba(64, 224, 208, 0.7)",
-    "--nh-font": SANS,
-  }),
-  theme("engage", "Engage", "dark", {
-    "--nh-pill-bg": "rgba(0, 0, 0, 0.96)",
-    "--nh-pill-border": "rgba(255, 156, 102, 0.4)",
-    "--nh-text": "#ffddb0",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(255, 221, 176, 0.4)",
-    "--nh-timer": "#cc99cc",
-    "--nh-rec-dot": "#ff9c66",
-    "--nh-fx-primary": "#ff9c66",
-    "--nh-fx-accent": "#cc99cc",
-    "--nh-fx-glow": "rgba(255, 204, 102, 0.75)",
-    "--nh-font": CONDENSED,
-  }),
-  theme("yellow-fury", "Yellow Fury", "light", {
-    "--nh-pill-bg": "rgba(255, 205, 0, 0.96)",
-    "--nh-pill-border": "rgba(20, 20, 20, 0.85)",
-    "--nh-text": "#141414",
-    "--nh-tentative-opacity": "0.5",
-    "--nh-placeholder": "rgba(20, 20, 20, 0.45)",
-    "--nh-timer": "rgba(20, 20, 20, 0.7)",
-    "--nh-rec-dot": "#d1001f",
-    "--nh-fx-primary": "#141414",
-    "--nh-fx-accent": "#d1001f",
-    "--nh-fx-glow": "rgba(20, 20, 20, 0.35)",
-    "--nh-font": SANS,
-  }),
-  theme("royale", "Royale", "dark", {
-    "--nh-pill-bg": "rgba(38, 10, 14, 0.94)",
-    "--nh-pill-border": "rgba(255, 46, 62, 0.35)",
-    "--nh-text": "#ffe9c9",
-    "--nh-tentative-opacity": "0.55",
-    "--nh-placeholder": "rgba(255, 233, 201, 0.4)",
-    "--nh-timer": "rgba(255, 208, 112, 0.8)",
-    "--nh-rec-dot": "#ff2e3e",
-    "--nh-fx-primary": "#ff2e3e",
-    "--nh-fx-accent": "#ffd070",
-    "--nh-fx-glow": "rgba(255, 208, 112, 0.85)",
-    "--nh-font": SERIF,
+  // Dusty muted pastels on grey-green paper; the quietest.
+  theme("fog", "Fog", "light", {
+    bg: "rgba(230, 232, 227, 0.94)",
+    border: "#c9cec5",
+    text: "#4a5049",
+    recDot: "#c98a7e",
+    ramp: ["#9db5a6", "#c4a9a0", "#a9aec4", "#c9c19a", "#9fb9c2"],
+    font: SANS,
   }),
 ];
 

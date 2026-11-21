@@ -11,6 +11,9 @@
 import type { EffectColors, EffectFrame, EffectRenderer } from "./types";
 import { getEffect } from "./index";
 import { clamp01 } from "./types";
+import { expandRamp, parseColor, splitRamp } from "../ramp";
+
+const BLEND_MODES = new Set(["lighter", "multiply", "screen", "source-over"]);
 
 const HISTORY_CAP = 96;
 /// Render-rate caps (SPEC14 FR-R1). The -1 ms slack absorbs rAF timestamp
@@ -41,7 +44,13 @@ export class EffectEngine {
   private lastRenderTs = -1;
   private level = 0;
   private levels: number[] = [];
-  private colors: EffectColors = { primary: "", accent: "", glow: "" };
+  private colors: EffectColors = {
+    primary: "",
+    accent: "",
+    glow: "",
+    ramp: [],
+    blend: "source-over",
+  };
   private reducedMotion: boolean;
   private width = 0;
   private height = 0;
@@ -51,7 +60,7 @@ export class EffectEngine {
     levels: [],
     time: 0,
     dt: 0,
-    colors: { primary: "", accent: "", glow: "" },
+    colors: { primary: "", accent: "", glow: "", ramp: [], blend: "source-over" },
     reducedMotion: false,
     width: 0,
     height: 0,
@@ -68,11 +77,35 @@ export class EffectEngine {
   /** Resolve theme colors from CSS variables on (an ancestor of) the canvas. */
   refreshColors() {
     const style = getComputedStyle(this.canvas);
+    const primary = style.getPropertyValue("--nh-fx-primary").trim() || style.color;
+    const accent = style.getPropertyValue("--nh-fx-accent").trim() || style.color;
+    const declared = splitRamp(style.getPropertyValue("--nh-fx-ramp"));
+    const stops = (declared.length >= 2 ? declared : [primary, accent]).map((c) =>
+      this.normalizeColor(c),
+    );
+    const blend = style.getPropertyValue("--nh-fx-blend").trim();
     this.colors = {
-      primary: style.getPropertyValue("--nh-fx-primary").trim() || style.color,
-      accent: style.getPropertyValue("--nh-fx-accent").trim() || style.color,
+      primary,
+      accent,
       glow: style.getPropertyValue("--nh-fx-glow").trim() || style.color,
+      ramp: expandRamp(stops),
+      blend: (BLEND_MODES.has(blend) ? blend : "source-over") as GlobalCompositeOperation,
     };
+  }
+
+  /**
+   * Named or otherwise exotic CSS colors (user themes) are canonicalized by
+   * the canvas itself so the ramp can blend them; anything it rejects is
+   * passed through and shows up unblended.
+   */
+  private normalizeColor(color: string): string {
+    if (parseColor(color) || !this.ctx) return color;
+    const before = this.ctx.fillStyle;
+    this.ctx.fillStyle = "#000000";
+    this.ctx.fillStyle = color;
+    const canonical = this.ctx.fillStyle;
+    this.ctx.fillStyle = before;
+    return typeof canonical === "string" ? canonical : color;
   }
 
   setEffect(id: string) {

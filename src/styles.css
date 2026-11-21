@@ -444,12 +444,20 @@ button:focus-visible {
 
 /* Beat .pill's `position: fixed; inset: 0` (defined later in this file) with
    a two-class selector — the preview must stay inside its stage. */
+.preview-stage .preview-pill.compact {
+  width: 240px;
+  height: 44px;
+}
+
 .preview-stage .preview-pill {
   position: relative;
   inset: auto;
-  width: 320px;
-  height: 56px;
+  width: 280px;
+  height: 48px;
   margin: 0;
+  /* Same side inset the real overlay gets from .pill-row, so the record
+     dot and timer never crowd the border. */
+  padding: 0 16px;
   pointer-events: none;
 }
 
@@ -472,87 +480,31 @@ button:focus-visible {
   box-shadow: 0 6px 12px -8px rgba(0, 0, 0, 0.35);
 }
 
-.appearance-nav {
+/* The box-size switch under the preview. */
+.size-switch {
   display: flex;
   gap: 6px;
-  padding: 8px 0 0;
+  padding: 10px 0 0;
+  justify-content: center;
 }
 
-/* Anchored section titles land below the pinned block, not under it. */
-.appearance-anchor {
-  scroll-margin-top: 190px;
-}
-
-.appearance-nav button {
+.size-switch button {
   border: 1px solid var(--hairline);
   background: var(--panel-2);
   color: var(--text);
-  border-radius: 999px;
+  border-radius: 7px;
   padding: 5px 14px;
   font-size: 12px;
   cursor: pointer;
 }
 
-.appearance-nav button:hover {
+.size-switch button:hover {
   background: var(--accent-soft);
 }
 
-/* SPEC16 FR-U2: the cinema-mode gallery — static swatch cards only. */
-.mode-gallery {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 8px;
-  padding: 12px 14px;
-}
-
-.mode-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  border: 1px solid var(--hairline);
-  background: var(--panel-2);
-  color: var(--text);
-  border-radius: 8px;
-  padding: 10px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.mode-card:hover {
-  background: var(--accent-soft);
-}
-
-.mode-card.selected {
+.size-switch button.selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
-}
-
-.mode-swatch {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  width: 100%;
-  height: 18px;
-  border-radius: 5px;
-  padding: 0 5px;
-  border: 1px solid var(--hairline);
-}
-
-.mode-swatch i {
-  width: 10px;
-  height: 8px;
-  border-radius: 2px;
-}
-
-.mode-name {
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.mode-tagline {
-  font-size: 11px;
-  color: var(--muted);
 }
 
 .picker-grid {
@@ -592,20 +544,20 @@ button:focus-visible {
 
 .swatch {
   display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  width: 40px;
+  align-items: stretch;
+  width: 46px;
   height: 20px;
   border-radius: 5px;
   border: 1px solid var(--hairline);
-  padding: 0 4px;
+  padding: 4px;
+  gap: 1px;
   flex-shrink: 0;
 }
 
+/* One sliver per ramp color. */
 .swatch i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+  flex: 1;
+  border-radius: 1px;
 }
 
 /* ---------- Onboarding ---------- */
@@ -877,13 +829,13 @@ body.overlay-body {
   justify-content: center;
   gap: 12px;
   margin: 4px;
-  border-radius: 100px;
+  border-radius: 14px;
   background: var(--nh-pill-bg, rgba(22, 22, 26, 0.86));
   backdrop-filter: blur(18px);
   color: var(--nh-text, #f5f5f7);
   font-family: var(--nh-font, inherit);
   border: 0.5px solid var(--nh-pill-border, rgba(255, 255, 255, 0.14));
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--nh-pill-shadow, 0 8px 28px rgba(0, 0, 0, 0.35));
   opacity: 0;
   transform: translateY(8px);
   transition: opacity 0.18s ease, transform 0.18s ease;
@@ -893,7 +845,7 @@ body.overlay-body {
 .fx-canvas {
   flex: 1;
   min-width: 0;
-  height: 34px;
+  height: 30px;
   display: block;
 }
 
@@ -908,7 +860,7 @@ body.overlay-body {
   flex-direction: column;
   justify-content: flex-end;
   gap: 6px;
-  border-radius: 22px;
+  border-radius: 16px;
   padding: 12px 18px 10px;
 }
 
@@ -1009,8 +961,9 @@ body.overlay-body {
 
 .pill-cancel {
   border: none;
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(245, 245, 247, 0.8);
+  /* Tinted from the theme's text color so it reads on light pills too. */
+  background: color-mix(in srgb, var(--nh-text, #f5f5f7) 14%, transparent);
+  color: color-mix(in srgb, var(--nh-text, #f5f5f7) 80%, transparent);
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -1021,7 +974,7 @@ body.overlay-body {
 }
 
 .pill-cancel:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: color-mix(in srgb, var(--nh-text, #f5f5f7) 26%, transparent);
 }
 
 /* Focus-guard prompt (SPEC7 FR-G3): question + Paste / Copy only */

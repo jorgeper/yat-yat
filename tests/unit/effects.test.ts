@@ -1,4 +1,5 @@
-// U8: the effect registry (SPEC6 §6, counts amended per SPEC16 §5) — 29 renderers, one interface, theme
+// U8: the effect registry (SPEC6 §6; counts and the color fixture amended for the owner's
+// 2026-11-20 effect/color replacement) — 7 renderers, one interface, theme
 // colors required everywhere (no hardcoded draw colors at the source level).
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -40,7 +41,13 @@ function frame(overrides: Partial<EffectFrame> = {}): EffectFrame {
     levels: Array.from({ length: 40 }, (_, i) => (i % 10) / 10),
     time: 1.2,
     dt: 0.016,
-    colors: { primary: "sentinel-primary", accent: "sentinel-accent", glow: "sentinel-glow" },
+    colors: {
+      primary: "sentinel-primary",
+      accent: "sentinel-accent",
+      glow: "sentinel-glow",
+      ramp: ["sentinel-ramp-a", "sentinel-ramp-b"],
+      blend: "source-over",
+    },
     reducedMotion: false,
     width: 200,
     height: 34,
@@ -49,10 +56,10 @@ function frame(overrides: Partial<EffectFrame> = {}): EffectFrame {
 }
 
 describe("U8: effect registry", () => {
-  it("has exactly 29 effects with unique ids and the default present", () => {
-    expect(EFFECTS).toHaveLength(29);
+  it("has exactly 7 effects with unique ids and the default present", () => {
+    expect(EFFECTS).toHaveLength(7);
     const ids = EFFECTS.map((e) => e.id);
-    expect(new Set(ids).size).toBe(29);
+    expect(new Set(ids).size).toBe(7);
     expect(ids).toContain(DEFAULT_EFFECT);
   });
 
@@ -86,7 +93,7 @@ describe("U8: effect registry", () => {
     const modules = readdirSync(dir).filter(
       (f: string) => f.endsWith(".ts") && !["index.ts", "types.ts", "engine.ts"].includes(f),
     );
-    expect(modules.length).toBe(29);
+    expect(modules.length).toBe(7);
     const colorLiteral = /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|\b(?:white|black|red|blue|green|cyan|magenta|yellow|orange|purple)\b/;
     for (const file of modules) {
       const source = readFileSync(join(dir, file), "utf8");

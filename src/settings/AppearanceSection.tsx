@@ -1,8 +1,8 @@
-// Appearance (SPEC6 FR-A5, SPEC16 FR-U): live preview running the REAL
-// effect engine on synthetic levels; a cinema-mode gallery whose cards set
-// the effect+theme pair in one save; an effect picker; a theme swatch grid;
-// and user themes with Reload. One scrollable page — the segmented control
-// is scroll-anchor sugar, every section stays mounted.
+// Appearance (SPEC6 FR-A5; reshaped by the owner 2026-11-20): live preview
+// running the REAL effect engine on synthetic levels, with the box-size
+// switch under it; a color swatch grid; an effect picker; and user themes
+// with Reload. Color and effect are independent — every color works with
+// every effect — so there are no preset pairs (SPEC16's modes are gone).
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../ipc/api";
@@ -11,7 +11,6 @@ import { usePageVisible } from "../lib/usePageVisible";
 import { invalidateAppliedTheme } from "../overlay/applyTheme";
 import { EFFECTS } from "../overlay/effects";
 import { EffectEngine } from "../overlay/effects/engine";
-import { MODES, modeFor } from "../overlay/modes";
 import { getBuiltinTheme, THEMES } from "../overlay/themes";
 import { secretThemeCss } from "../overlay/secretTheme";
 
@@ -39,15 +38,9 @@ export default function AppearanceSection({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<EffectEngine | null>(null);
   const pageVisible = usePageVisible();
-  // SPEC16 FR-U4: hovering a mode card retargets the preview WITHOUT
-  // touching settings; leave reverts to the saved pair.
-  const [previewPair, setPreviewPair] = useState<{ effect: string; theme: string } | null>(null);
-  const previewEffect = previewPair?.effect ?? settings.overlay_effect;
-  const previewTheme = previewPair?.theme ?? settings.overlay_theme;
-  // Scroll anchors for the segmented control (FR-U1).
-  const modesRef = useRef<HTMLDivElement | null>(null);
-  const effectsRef = useRef<HTMLDivElement | null>(null);
-  const themesRef = useRef<HTMLDivElement | null>(null);
+  const previewEffect = settings.overlay_effect;
+  const previewTheme = settings.overlay_theme;
+  const compact = settings.overlay_size === "compact";
 
   const loadUserThemes = useCallback(() => {
     // Edited theme files may resolve differently now — let the overlay's
@@ -58,7 +51,7 @@ export default function AppearanceSection({
 
   useEffect(loadUserThemes, [loadUserThemes]);
 
-  // Resolve + apply the selected (or hover-previewed) theme to the preview.
+  // Resolve + apply the selected theme to the preview.
   useEffect(() => {
     const id = previewTheme;
     const secret = secretThemeCss(id);
@@ -93,95 +86,38 @@ export default function AppearanceSection({
       engineRef.current = null;
       engine.dispose();
     };
-  }, [previewEffect, pageVisible]);
-
-  const selectedMode = modeFor(settings.overlay_effect, settings.overlay_theme);
-
-  const scrollTo = (ref: { current: HTMLDivElement | null }) =>
-    ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [previewEffect, pageVisible, compact]);
 
   return (
     <>
-      {/* SPEC16 FR-U + owner follow-up: the preview and the segmented
-          control stay pinned while the galleries scroll beneath them. */}
+      {/* The preview stays pinned while the pickers scroll beneath it. */}
       <div className="appearance-pinned">
         <div className="section-title">Preview</div>
         <div className="preview-stage" data-testid="appearance-preview">
-          <div className="pill nh-preview nh-theme visible preview-pill">
+          <div
+            className={`pill nh-preview nh-theme visible preview-pill ${compact ? "compact" : ""}`}
+            data-testid="preview-pill"
+          >
             <span className="rec-dot" />
             <canvas className="fx-canvas" ref={canvasRef} data-testid="preview-canvas" />
             <span className="pill-timer">0:07</span>
           </div>
         </div>
-
-        <div className="appearance-nav" data-testid="appearance-nav">
-        <button data-testid="appearance-nav-modes" onClick={() => scrollTo(modesRef)}>
-          Modes
-        </button>
-        <button data-testid="appearance-nav-effects" onClick={() => scrollTo(effectsRef)}>
-          Effects
-        </button>
-        <button data-testid="appearance-nav-themes" onClick={() => scrollTo(themesRef)}>
-          Themes
-        </button>
-        </div>
-      </div>
-
-      <div className="section-title appearance-anchor" ref={modesRef}>
-        Modes
-      </div>
-      <div className="card">
-        <div className="mode-gallery" data-testid="mode-gallery">
-          {MODES.map((m) => {
-            const pairTheme = THEMES.find((t) => t.id === m.theme);
-            return (
-              <button
-                key={m.id}
-                className={`mode-card ${selectedMode?.id === m.id ? "selected" : ""}`}
-                data-testid={`mode-${m.id}`}
-                onPointerEnter={() => setPreviewPair({ effect: m.effect, theme: m.theme })}
-                onPointerLeave={() => setPreviewPair(null)}
-                onClick={() => {
-                  setPreviewPair(null);
-                  void save({ ...settings, overlay_effect: m.effect, overlay_theme: m.theme });
-                }}
-              >
-                {pairTheme && (
-                  <span className="mode-swatch" style={{ background: pairTheme.swatch.bg }}>
-                    <i style={{ background: pairTheme.swatch.primary }} />
-                    <i style={{ background: pairTheme.swatch.accent }} />
-                    <i style={{ background: pairTheme.swatch.text }} />
-                  </span>
-                )}
-                <span className="mode-name">{m.name}</span>
-                <span className="mode-tagline">{m.tagline}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="section-title appearance-anchor" ref={effectsRef}>
-        Effect
-      </div>
-      <div className="card">
-        <div className="picker-grid" data-testid="effect-picker">
-          {EFFECTS.map((e) => (
+        <div className="size-switch" data-testid="size-switch">
+          {(["regular", "compact"] as const).map((size) => (
             <button
-              key={e.id}
-              className={`picker-item ${settings.overlay_effect === e.id ? "selected" : ""}`}
-              data-testid={`effect-${e.id}`}
-              onClick={() => save({ ...settings, overlay_effect: e.id })}
+              key={size}
+              className={(compact ? "compact" : "regular") === size ? "selected" : ""}
+              data-testid={`size-${size}`}
+              onClick={() => save({ ...settings, overlay_size: size })}
             >
-              {e.name}
+              {size === "regular" ? "Regular" : "Compact"}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="section-title appearance-anchor" ref={themesRef}>
-        Theme
-      </div>
+      <div className="section-title">Color</div>
       <div className="card">
         <div className="picker-grid" data-testid="theme-picker">
           {THEMES.map((t) => (
@@ -194,11 +130,27 @@ export default function AppearanceSection({
               onClick={() => save({ ...settings, overlay_theme: t.id })}
             >
               <span className="swatch" style={{ background: t.swatch.bg }}>
-                <i style={{ background: t.swatch.primary }} />
-                <i style={{ background: t.swatch.accent }} />
-                <i style={{ background: t.swatch.text }} />
+                {t.ramp.map((color, i) => (
+                  <i key={i} style={{ background: color }} />
+                ))}
               </span>
               {t.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="section-title">Effect</div>
+      <div className="card">
+        <div className="picker-grid" data-testid="effect-picker">
+          {EFFECTS.map((e) => (
+            <button
+              key={e.id}
+              className={`picker-item ${settings.overlay_effect === e.id ? "selected" : ""}`}
+              data-testid={`effect-${e.id}`}
+              onClick={() => save({ ...settings, overlay_effect: e.id })}
+            >
+              {e.name}
             </button>
           ))}
         </div>

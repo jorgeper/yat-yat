@@ -194,6 +194,41 @@ surface: a sticky Modes/Effects/Themes segmented control scroll-anchors
 the sections, cards are static swatches, and the single real-engine
 preview retargets on card hover (preview-only; settings write on click).
 
+**Effect/color replacement (owner-requested directly, 2026-11-20, without
+a SPEC/GOAL pair — designed interactively against a mock-up page).** Every
+count and catalog described above in this section is superseded:
+
+- **7 effects** (`ribbon`, `filaments`, `trace`, `halftone`, `stardust`,
+  `mesh`, `constellation`; default `ribbon`) replace the 29, and **10
+  themes** (`midnight`, `apricot`, `one-bit`, `clay`, `graphite`, `sorbet`,
+  `lagoon`, `peony`, `wisteria`, `fog`; default `midnight`) replace the 26.
+  A theme is now purely a *color* — surface, type and a hue ramp — and any
+  color pairs with any effect. Saved ids from the old catalogs fall back to
+  the defaults through the existing unknown-id path; no migration code.
+- **Cinema modes are gone**: `src/overlay/modes.ts`, the gallery, the
+  segmented nav, U24 and E22a–E22b were deleted (those IDs are retired, not
+  reused). This is the one place existing tests were removed, on the
+  owner's instruction to replace "the themes and the movie stuff".
+- **Ramps extend the effect contract** (SPEC6 FR-A1 called it frozen-ish):
+  `frame.colors` gains `ramp` — a 32-step gradient the engine expands from
+  the optional `--nh-fx-ramp` theme variable, falling back to
+  primary→accent so user themes and Yat95 keep working — and `blend`, from
+  the optional `--nh-fx-blend`. All color math lives in
+  `src/overlay/ramp.ts` (U26); effect modules index the ramp with `rampAt`
+  and stay literal-free, so U8's scan is unchanged. The 11-variable theme
+  contract is unchanged; `--nh-pill-shadow` is a third optional variable.
+- **The box is smaller with 14 px corners** instead of a capsule, in two
+  sizes chosen by the new `overlay_size` setting (`regular` 288 × 56
+  window, `compact` 248 × 52; unknown values read as regular — R50). The
+  no-model notice and the focus prompt keep the original 64 px-tall box
+  because they carry a sentence and buttons; live mode keeps 420 × 110.
+  The size is resolved in Rust at show time (`overlay::box_size`); the
+  frontend needs no payload change because the pill fills its window.
+- **Amended tests** (counts, ids and fixtures only): U8 (29→7, the color
+  fixture gains `ramp`/`blend`), U9 (26→10), E13a–E13b (counts, default and
+  sample ids, the sampled hex), E17b (26→10, the restored default id), R11
+  (default ids). **New**: U26, E24a–E24b, R50.
+
 **User JS/TS effects are deferred deliberately**: user code in the overlay
 webview needs an IPC-less sandbox and a frozen API. The renderer interface
 above IS that API surface — if plugins ever land, they implement the same

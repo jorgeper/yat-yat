@@ -19,9 +19,9 @@ whatever app has focus.
 - **Simple.** One hotkey, one overlay, one menu-bar icon.
 
 <p align="center">
-  <a href="docs/screenshots/pill-indigo-bars.png"><img src="docs/screenshots/pill-indigo-bars.png" width="32%" alt="The dictation pill mid-recording: live transcription over the classic bars visualizer in the default Indigo theme"></a>
-  <a href="docs/screenshots/pill-phosphor-heartbeat.png"><img src="docs/screenshots/pill-phosphor-heartbeat.png" width="32%" alt="The pill in the Phosphor CRT theme with the Heartbeat EKG visualizer"></a>
-  <a href="docs/screenshots/pill-vaporwave-mirror.png"><img src="docs/screenshots/pill-vaporwave-mirror.png" width="32%" alt="The pill in the Vaporwave theme with the Mirror Wave visualizer"></a>
+  <a href="docs/screenshots/pill-midnight-ribbon.png"><img src="docs/screenshots/pill-midnight-ribbon.png" width="32%" alt="The dictation pill mid-recording: live transcription over the default look, the Ribbon visualizer in the Midnight color"></a>
+  <a href="docs/screenshots/pill-sorbet-filaments.png"><img src="docs/screenshots/pill-sorbet-filaments.png" width="32%" alt="The pill in the Sorbet color with the Filaments visualizer"></a>
+  <a href="docs/screenshots/pill-clay-mesh.png"><img src="docs/screenshots/pill-clay-mesh.png" width="32%" alt="The pill in the Clay color with the Mesh visualizer"></a>
 </p>
 
 > **⚠️ Alpha** — Yat Yat is pre-release software (`0.1.0-alpha.7`).
@@ -106,20 +106,14 @@ itself shows state — idle, **recording (red dot)**, and processing.
 
 ## Looks
 
-Settings → **Appearance** picks the recording visualizer (29 effects, from
-the classic bars to oscilloscope, starfield, fireflies, and aurora) and the
-overlay theme (26 built-ins — Phosphor CRT, Vaporwave, Nord, Newsprint, …),
-with a live preview that runs the real engine on fake voice. Fonts are part
-of the theme. You can also write your own theme as a single CSS file — see
+Settings → **Appearance** has two independent choices, and every color works
+with every effect. **Color** is one of ten palettes — Midnight, Apricot,
+One-Bit, Clay, Graphite, Sorbet, Lagoon, Peony, Wisteria, Fog — each a ramp
+of hues plus the box's surface and typeface. **Effect** is one of seven
+voice-driven visualizers: Ribbon, Filaments, Trace, Halftone, Stardust, Mesh
+and Constellation. A live preview runs the real engine on fake voice, and a
+switch under it picks the box size, Regular or Compact. You can also write your own theme as a single CSS file — see
 [THEMES.md](THEMES.md) for the contract and the drop-in folder.
-
-**Modes** are one-click presets pairing an effect with its matching theme —
-fourteen of them, riffing on four decades of talking machines from the
-movies (a scanning red eye, a phosphor war-game terminal, glyph rain, a
-chrome blob, console lamps, a neon diner sign, …). Hover a card to preview
-it live; click to apply both halves at once. Mixing your own effect+theme
-combination afterwards works exactly as before — a mode is just a shortcut,
-not a lock.
 
 ## Live transcription
 
