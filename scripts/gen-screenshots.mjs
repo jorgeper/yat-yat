@@ -13,24 +13,24 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = join(root, "docs/screenshots");
 const PORT = 1431;
 
-// Variety on purpose: the default look, a CRT, and something loud.
+// Variety on purpose: the default look, a pastel rainbow, and a light one.
 const SHOTS = [
   {
-    file: "pill-indigo-bars.png",
-    theme: "indigo",
-    effect: "classic-bars",
+    file: "pill-midnight-ribbon.png",
+    theme: "midnight",
+    effect: "ribbon",
     text: "Ship the release notes on Wednesday, then call the dentist.",
   },
   {
-    file: "pill-phosphor-heartbeat.png",
-    theme: "phosphor",
-    effect: "heartbeat",
+    file: "pill-sorbet-filaments.png",
+    theme: "sorbet",
+    effect: "filaments",
     text: "Remind me that the quarterly numbers look better than expected.",
   },
   {
-    file: "pill-vaporwave-mirror.png",
-    theme: "vaporwave",
-    effect: "mirror-wave",
+    file: "pill-clay-mesh.png",
+    theme: "clay",
+    effect: "mesh",
     text: "Draft an intro paragraph for the design doc before standup.",
   },
 ];

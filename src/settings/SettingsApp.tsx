@@ -9,6 +9,7 @@ import { usePageVisible } from "../lib/usePageVisible";
 import { updates } from "../ipc/updates";
 import { konamiProgress, KONAMI } from "../lib/eggs";
 import { SECRET_THEME_ID } from "../overlay/secretTheme";
+import { DEFAULT_THEME } from "../overlay/themes";
 import AppearanceSection from "./AppearanceSection";
 import GeneralSection from "./GeneralSection";
 import HotkeySection from "./HotkeySection";
@@ -152,7 +153,7 @@ export default function SettingsApp() {
   // only — it just writes overlay_theme like the Appearance picker would.
   const settingsEggRef = useRef<Settings | null>(null);
   settingsEggRef.current = settings;
-  const prevThemeRef = useRef<string>("indigo");
+  const prevThemeRef = useRef<string>(DEFAULT_THEME);
   useEffect(() => {
     let progress = 0;
     const onKey = (e: KeyboardEvent) => {

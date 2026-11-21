@@ -72,6 +72,9 @@ pub struct Settings {
     pub overlay_effect: String,
     /// Overlay theme id — built-in id or `user:<file>` (SPEC6).
     pub overlay_theme: String,
+    /// Recording-box size: "regular" or "compact"; anything else reads as
+    /// regular (owner-requested 2026-11-20).
+    pub overlay_size: String,
     /// Ask before pasting when focus moved to a different app mid-dictation
     /// (SPEC7 FR-G6, default on).
     pub focus_guard: bool,
@@ -115,8 +118,9 @@ impl Default for Settings {
             live_transcription: false,
             // "auto" keeps what every earlier build did.
             whisper_language: "auto".into(),
-            overlay_effect: "classic-bars".into(),
-            overlay_theme: "indigo".into(),
+            overlay_effect: "ribbon".into(),
+            overlay_theme: "midnight".into(),
+            overlay_size: "regular".into(),
             focus_guard: true,
             sound_cues: true,
             easter_eggs: true,

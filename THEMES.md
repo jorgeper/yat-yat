@@ -52,6 +52,15 @@ Newsprint (light, serif), High Contrast.
 - All eleven variables above are the **contract** — define every one. The
   picker marks incomplete themes and Yat Yat falls back to defaults for
   missing values.
+- Three more variables are **optional**:
+  - `--nh-fx-ramp` — a comma-separated list of two or more colors (hex or
+    `rgb()`/`rgba()`), e.g. `#ffadc6, #fff0a8, #a8dcff`. Effects draw with a
+    smooth gradient through them. Without it, the ramp runs from
+    `--nh-fx-primary` to `--nh-fx-accent`.
+  - `--nh-fx-blend` — how overlapping layers combine: `lighter` (suits dark
+    pills), `multiply` (suits light pills), `screen`, or `source-over`
+    (the default: no blending).
+  - `--nh-pill-shadow` — replaces the pill's drop shadow.
 - You may add extra CSS below the variables, scoped under `.nh-theme`, for
   flourishes the variables can't express (e.g. a different pill shadow).
 - **No remote resources.** Yat Yat never touches the network, and themes

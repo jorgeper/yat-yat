@@ -209,7 +209,7 @@ mod tests {
     fn r11_settings_fields_default_from_legacy_json() {
         let legacy = r#"{"hotkey":"command_right"}"#;
         let settings: crate::settings::Settings = serde_json::from_str(legacy).unwrap();
-        assert_eq!(settings.overlay_effect, "classic-bars");
-        assert_eq!(settings.overlay_theme, "indigo");
+        assert_eq!(settings.overlay_effect, "ribbon");
+        assert_eq!(settings.overlay_theme, "midnight");
     }
 }
