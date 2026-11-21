@@ -19,7 +19,9 @@ export function createHalftone(): EffectRenderer {
       const oy = (h - rows * CELL) / 2 + CELL / 2;
       const midRow = (rows - 1) / 2;
       for (let i = 0; i < cols; i++) {
-        const level = levelAt(frame.levels, cols, i);
+        // A slow shimmer keeps the grid alive between sounds.
+        const shimmer = frame.reducedMotion ? 0 : Math.sin(frame.time * 3 - i * 0.45) * 0.07;
+        const level = levelAt(frame.levels, cols, i) + shimmer;
         ctx.fillStyle = rampAt(frame.colors, cols > 1 ? i / (cols - 1) : 0);
         for (let j = 0; j < rows; j++) {
           const offCenter = midRow > 0 ? Math.abs(j - midRow) / midRow : 0;

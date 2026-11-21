@@ -219,11 +219,31 @@ count and catalog described above in this section is superseded:
   contract is unchanged; `--nh-pill-shadow` is a third optional variable.
 - **The box is smaller with 14 px corners** instead of a capsule, in two
   sizes chosen by the new `overlay_size` setting (`regular` 288 × 56
-  window, `compact` 248 × 52; unknown values read as regular — R50). The
+  window, `compact` 248 × 52; unknown values read as regular — R50; both
+  superseded by the sizing follow-up below). The
   no-model notice and the focus prompt keep the original 64 px-tall box
   because they carry a sentence and buttons; live mode keeps 420 × 110.
   The size is resolved in Rust at show time (`overlay::box_size`); the
   frontend needs no payload change because the pill fills its window.
+  Follow-ups the same day (owner's sizing): **compact is 288 × 56** and
+  **regular, the default, is exactly 25% larger each way — 360 × 70**
+  (a 420 × 110 regular was tried in between and read as too big). The
+  regular box's inner sizes are scaled by a height-range media query on
+  the overlay viewport.
+- **Transcribing keeps the box and morphs the effect** (same-day
+  follow-up, owner-picked from a mock-up page): the SPEC13 shimmer bars are
+  gone. The recording canvas's last frame is snapshotted, and a second
+  canvas (`thinking-fx`) runs the **Writing figure**
+  (`src/overlay/thinking.ts`): 150 sparks seeded on the effect's pixels fly
+  together into a text cursor that lays down two lines of "words". There
+  is no progress bar — when `transcribe-progress` arrives the cursor's
+  position is the progress, otherwise it sweeps on a loop. The dot, timer
+  and cancel slot hold their places. In live mode Rust replays the
+  recording's live flag (`overlay::effective_live`, R51) so the box stays
+  420 × 110 and the transcript stays visible. E6a and E19a–E19b were
+  re-pointed from the removed `thinking-wave` bars to the figure canvas
+  (`data-fill` / `data-fill-total`, same `filledBars` semantics: monotonic,
+  full only at completion). New: U27, E25a–E25b, R51.
 - **Amended tests** (counts, ids and fixtures only): U8 (29→7, the color
   fixture gains `ramp`/`blend`), U9 (26→10), E13a–E13b (counts, default and
   sample ids, the sampled hex), E17b (26→10, the restored default id), R11

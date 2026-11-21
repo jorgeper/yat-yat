@@ -11,10 +11,12 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
 pub const OVERLAY_LABEL: &str = "overlay";
 /// The recording box (owner-requested 2026-11-20: smaller, gentler corners
 /// than the original 320 x 64 capsule). `overlay_size` picks between these.
-pub const OVERLAY_WIDTH: f64 = 288.0;
-pub const OVERLAY_HEIGHT: f64 = 56.0;
-pub const OVERLAY_COMPACT_WIDTH: f64 = 248.0;
-pub const OVERLAY_COMPACT_HEIGHT: f64 = 52.0;
+/// Compact is the small 288 x 56 bar; regular (the default) is exactly 25%
+/// larger each way (owner's sizing, third pass the same day).
+pub const OVERLAY_WIDTH: f64 = 360.0;
+pub const OVERLAY_HEIGHT: f64 = 70.0;
+pub const OVERLAY_COMPACT_WIDTH: f64 = 288.0;
+pub const OVERLAY_COMPACT_HEIGHT: f64 = 56.0;
 /// States that carry a sentence or buttons (no-model, focus prompt) keep the
 /// original roomier box at either size setting.
 pub const OVERLAY_NOTICE_WIDTH: f64 = 320.0;
@@ -39,6 +41,9 @@ pub mod state {
 static OVERLAY_VISIBLE: AtomicBool = AtomicBool::new(false);
 static SHOW_GENERATION: AtomicU64 = AtomicU64::new(0);
 static LAST_LEVEL_EMIT: AtomicU64 = AtomicU64::new(0);
+/// Whether the most recent recording used the taller live box, so the
+/// transcribing state that follows can stay in that same box.
+static LAST_RECORDING_LIVE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Serialize)]
 struct ShowPayload {
@@ -188,6 +193,17 @@ pub fn box_size(state: &str, overlay_size: &str) -> (f64, f64) {
     }
 }
 
+/// Whether a show uses the taller live box. Recording decides it; the
+/// transcribing state inherits the recording's choice so the box does not
+/// change shape when the user stops talking. Every other state is never live.
+pub fn effective_live(state: &str, requested_live: bool, last_recording_live: bool) -> bool {
+    match state {
+        state::RECORDING => requested_live,
+        state::TRANSCRIBING => last_recording_live,
+        _ => false,
+    }
+}
+
 fn show_internal(
     app: &AppHandle,
     state: &str,
@@ -196,7 +212,10 @@ fn show_internal(
     to_app: Option<String>,
 ) {
     let generation = SHOW_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
-    let live = live && state == state::RECORDING;
+    let live = effective_live(state, live, LAST_RECORDING_LIVE.load(Ordering::SeqCst));
+    if state == state::RECORDING {
+        LAST_RECORDING_LIVE.store(live, Ordering::SeqCst);
+    }
     let (width, height) = if live {
         (OVERLAY_LIVE_WIDTH, OVERLAY_LIVE_HEIGHT)
     } else if state == state::FOCUS_CHANGED {
@@ -322,16 +341,32 @@ mod size_tests {
     // notice keeps its roomier box, and legacy settings JSON loads regular.
     #[test]
     fn r50_box_size_follows_setting_and_legacy_json_is_regular() {
-        assert_eq!(box_size(state::RECORDING, "regular"), (288.0, 56.0));
-        assert_eq!(box_size(state::RECORDING, "compact"), (248.0, 52.0));
-        assert_eq!(box_size(state::TRANSCRIBING, "compact"), (248.0, 52.0));
-        assert_eq!(box_size(state::RECORDING, "nonsense"), (288.0, 56.0));
-        assert_eq!(box_size(state::RECORDING, ""), (288.0, 56.0));
+        assert_eq!(box_size(state::RECORDING, "regular"), (360.0, 70.0));
+        assert_eq!(box_size(state::RECORDING, "compact"), (288.0, 56.0));
+        assert_eq!(box_size(state::TRANSCRIBING, "compact"), (288.0, 56.0));
+        assert_eq!(box_size(state::RECORDING, "nonsense"), (360.0, 70.0));
+        assert_eq!(box_size(state::RECORDING, ""), (360.0, 70.0));
+        // Regular is compact scaled by 1.25 each way.
+        assert_eq!(OVERLAY_WIDTH, OVERLAY_COMPACT_WIDTH * 1.25);
+        assert_eq!(OVERLAY_HEIGHT, OVERLAY_COMPACT_HEIGHT * 1.25);
         assert_eq!(box_size(state::NO_MODEL, "compact"), (320.0, 64.0));
 
         let legacy: crate::settings::Settings =
             serde_json::from_str(r#"{"hotkey":"command_right"}"#).unwrap();
         assert_eq!(legacy.overlay_size, "regular");
         assert_eq!(crate::settings::Settings::default().overlay_size, "regular");
+    }
+
+    // R51 (owner-requested 2026-11-20): transcribing stays in the box the
+    // recording used — live or not — and no other state is ever live.
+    #[test]
+    fn r51_transcribing_inherits_the_recording_box() {
+        assert!(effective_live(state::RECORDING, true, false));
+        assert!(!effective_live(state::RECORDING, false, true));
+        assert!(effective_live(state::TRANSCRIBING, false, true));
+        assert!(!effective_live(state::TRANSCRIBING, true, false));
+        for other in [state::NOTHING_HEARD, state::NO_MODEL, state::FOCUS_CHANGED] {
+            assert!(!effective_live(other, true, true), "{other} is never live");
+        }
     }
 }

@@ -25,17 +25,18 @@ test("E24a: the size switch resizes the preview, saves, and survives a reload", 
   const pill = page.getByTestId("preview-pill");
   await expect(page.getByTestId("size-regular")).toHaveClass(/selected/);
   const regular = await pill.boundingBox();
-  expect(Math.round(regular!.width)).toBe(280);
-  expect(Math.round(regular!.height)).toBe(48);
+  expect(Math.round(regular!.width)).toBe(352);
+  expect(Math.round(regular!.height)).toBe(62);
+  expect(await pill.evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).toBe("17px");
 
   await page.getByTestId("size-compact").click();
   await expect(page.getByTestId("size-compact")).toHaveClass(/selected/);
   await expect(page.getByTestId("size-regular")).not.toHaveClass(/selected/);
-  await expect.poll(async () => Math.round((await pill.boundingBox())!.width)).toBe(240);
-  expect(Math.round((await pill.boundingBox())!.height)).toBe(44);
+  await expect.poll(async () => Math.round((await pill.boundingBox())!.width)).toBe(280);
+  expect(Math.round((await pill.boundingBox())!.height)).toBe(48);
   expect((await lastSaved(page))?.overlay_size).toBe("compact");
 
-  // Gentler corners than the old capsule, at either size.
+  // Gentler corners than the old capsule, scaled down with the box.
   expect(await pill.evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).toBe("14px");
 
   await page.reload();
