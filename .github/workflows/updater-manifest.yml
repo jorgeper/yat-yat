@@ -18,6 +18,13 @@ on:
 permissions:
   contents: write
 
+# Publishing one release fires more than one of the events above at the same
+# moment. Two runs uploading latest.json together collide ("ReleaseAsset.name
+# already exists") and one fails, so run them one after the other.
+concurrency:
+  group: updater-manifest
+  cancel-in-progress: false
+
 jobs:
   advance:
     if: github.event_name == 'workflow_dispatch' || github.event.release.tag_name != 'updater'
