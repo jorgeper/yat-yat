@@ -624,6 +624,42 @@ pause. Feeding the replayed previews through the overlay's stabilizer,
 the text on screen ends within two or three words of the final
 transcript on both recordings.
 
+## Reusing a reading at stop (post-SPEC16)
+
+After a stop, the only transcription left is the tail: the audio since the
+last cut. Often that audio was already read while the user was still
+recording — by a live preview, or (live previews off) by a pass the chunker
+runs once per pause of 300 ms. The chunker keeps the latest such reading
+(`chunking::TailReading`), and the stop path uses it instead of running a
+pass when `chunking::reading_covers` holds:
+
+- no cut was taken since the reading, and
+- from 200 ms before the reading's audio ended to the end of the recording
+  there is no speech — at most 60 ms of loud frames, which lets the click of
+  the stop key through.
+
+"Loud" is judged as in `find_cut` (15% of the stretch's loud level). A
+reading taken during a pass that was in flight when the stop arrived counts
+too: the stop path waits for that pass either way.
+
+Measured by replay (`transcribe --live`, which now simulates the stop) on
+four recordings with 0.4 s and 0.8 s of quiet added at the end, live
+previews on and off: the reading was reused in all 14 runs, sparing a pass
+of 94–311 ms, with text identical to a fresh pass. On a recording cut
+mid-sentence at a breath pause, the reused text differed from the fresh one
+by one punctuation mark.
+
+Limits, also measured: on the two real dictations available, no reading was
+usable — one was stopped 0.24 s after the last word, the other ended in
+2.9 s of background sound above the silence threshold. Both fall back to
+the normal tail pass. How often real stops qualify is not known; the stop
+path logs `stop: reusing the reading…` when one does, and a breakdown of
+every stop (`recorder`, `pass in flight`, `tail`, `cleanup`, `delivery`).
+
+With live previews off this adds work while recording: one pass over the
+uncommitted audio per pause (replay: 10 passes, 3.4 s of compute, over a
+35 s recording). Tests: R46, R47.
+
 ## Design notes
 
 - **One pipeline thread** serializes Idle→Recording→Processing, so double

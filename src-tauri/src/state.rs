@@ -61,6 +61,9 @@ pub struct ChunkProgress {
     pub words: Vec<crate::stt::Word>,
     /// How many chunks were transcribed (for the stop-path log line).
     pub chunks: usize,
+    /// The latest reading of the audio after `committed`, if any — reused
+    /// by the stop path when nothing was said after it (chunking.rs).
+    pub reading: Option<crate::chunking::TailReading>,
 }
 
 /// One recording's chunker thread plus what it has produced so far.

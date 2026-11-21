@@ -123,6 +123,10 @@ fn main() -> anyhow::Result<()> {
                     (0.0f64, 0.0f64, 0.0f64, 0.0f64);
                 let mut previews = 0;
                 let mut lags = Vec::new();
+                // YATYAT_LIVE_PREVIEWS_OFF=1 replays the app with live
+                // transcription off: no previews, one reading per pause.
+                let previews_off = std::env::var_os("YATYAT_LIVE_PREVIEWS_OFF").is_some();
+                let mut reading: Option<yatyat_lib::chunking::TailReading> = None;
                 let mut seen = poll;
                 while seen <= samples.len() {
                     let start = context_start(committed);
@@ -132,16 +136,33 @@ fn main() -> anyhow::Result<()> {
                         let pass = model.transcribe_words(&buf[..chunk.end])?.ok_or_else(no_words)?;
                         stitch(&mut words, to_absolute(pass, start), committed as f32 / 16_000.0);
                         committed = start + chunk.keep_to;
+                        reading = None;
                         eprintln!("{:>6.2}s  cut at {:.2}s", seen as f64 / 16_000.0, committed as f64 / 16_000.0);
                         seen += (t.elapsed().as_secs_f64() * 16_000.0) as usize;
                         next_preview = seen;
-                    } else if seen >= next_preview && buf.len() >= yatyat_lib::chunking::PREVIEW_MIN_SAMPLES {
+                    } else if buf.len() >= yatyat_lib::chunking::PREVIEW_MIN_SAMPLES
+                        && if previews_off {
+                            // Live previews off: one reading per pause.
+                            yatyat_lib::chunking::ends_in_pause(buf)
+                                && !reading.as_ref().is_some_and(|r: &yatyat_lib::chunking::TailReading| {
+                                    r.committed == committed
+                                        && yatyat_lib::chunking::quiet_from(buf, r.end.saturating_sub(start))
+                                })
+                        } else {
+                            seen >= next_preview
+                        }
+                    {
                         let t = std::time::Instant::now();
                         let pass = model.transcribe_words(buf)?.ok_or_else(no_words)?;
                         let pass_time = t.elapsed();
                         let tail_time = pass_time.as_secs_f64();
                         let seam = committed as f32 / 16_000.0;
                         let tail = to_absolute(pass, start);
+                        reading = Some(yatyat_lib::chunking::TailReading {
+                            committed,
+                            end: seen,
+                            words: tail.clone(),
+                        });
                         let mut all = words.clone();
                         if all.is_empty() {
                             all = tail.clone();
@@ -172,6 +193,36 @@ fn main() -> anyhow::Result<()> {
                             + (yatyat_lib::live::preview_gap(pass_time).as_secs_f64() * 16_000.0) as usize;
                     }
                     seen += poll;
+                }
+                // The stop, at the end of the file: what the stop path would
+                // still have to transcribe, and whether a reading taken while
+                // recording spares it.
+                let seam = committed as f32 / 16_000.0;
+                let start = context_start(committed);
+                let t = std::time::Instant::now();
+                let pass = model.transcribe_words(&samples[start..])?.ok_or_else(no_words)?;
+                let fresh_time = t.elapsed();
+                let mut fresh = words.clone();
+                stitch(&mut fresh, to_absolute(pass, start), seam);
+                let fresh = yatyat_lib::chunking::words_text(&fresh);
+                match reading.filter(|r| yatyat_lib::chunking::reading_covers(&samples, committed, r)) {
+                    Some(r) => {
+                        let since = (samples.len() - r.end) as f64 / 16_000.0;
+                        let mut reused = words.clone();
+                        stitch(&mut reused, r.words, seam);
+                        let reused = yatyat_lib::chunking::words_text(&reused);
+                        eprintln!(
+                            "stop: reading from {since:.2}s before the end reused, sparing a {fresh_time:?} pass; \
+                             text {} ({} vs {} words)",
+                            if reused == fresh { "identical" } else { "DIFFERS" },
+                            reused.split_whitespace().count(),
+                            fresh.split_whitespace().count()
+                        );
+                        if reused != fresh {
+                            eprintln!("  reused: {reused}\n  fresh:  {fresh}");
+                        }
+                    }
+                    None => eprintln!("stop: no usable reading; tail pass takes {fresh_time:?}"),
                 }
                 lags.sort_by(|a, b| a.total_cmp(b));
                 if !lags.is_empty() {

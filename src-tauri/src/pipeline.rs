@@ -432,21 +432,43 @@ fn chunk_loop(
             // so its cost follows the length of the current phrase, not of
             // the whole recording.
             let end = start + buf.len();
-            if live
-                && Instant::now() >= preview_due
-                && end > previewed_to
+            // With live previews off, read the uncommitted audio once per
+            // pause instead: if the user stops without saying more, the
+            // stop path already has its tail (chunking::reading_covers).
+            let due = if live {
+                Instant::now() >= preview_due && end > previewed_to
+            } else {
+                crate::chunking::ends_in_pause(&buf)
+                    && !progress.lock().unwrap().reading.as_ref().is_some_and(|r| {
+                        r.committed == committed
+                            && crate::chunking::quiet_from(&buf, r.end.saturating_sub(start))
+                    })
+            };
+            if due
                 && buf.len() >= crate::chunking::PREVIEW_MIN_SAMPLES
                 && !stop.load(Ordering::SeqCst)
             {
                 let t0 = Instant::now();
                 match state.transcribe_words(&app, &buf) {
                     Ok(words) => {
+                        let words = crate::chunking::to_absolute(words, start);
+                        // Kept even if a stop arrived during the pass: the
+                        // stop path waited for it and may be able to use it.
+                        progress.lock().unwrap().reading =
+                            Some(crate::chunking::TailReading {
+                                committed,
+                                end,
+                                words: words.clone(),
+                            });
+                        if !live {
+                            continue;
+                        }
                         let (preview, final_words) = {
                             let progress = progress.lock().unwrap();
                             (
                                 crate::chunking::preview_text(
                                     &progress.words,
-                                    crate::chunking::to_absolute(words, start),
+                                    words,
                                     committed as f32 / 16_000.0,
                                 ),
                                 crate::chunking::final_word_count(&progress.words, committed),
@@ -484,6 +506,7 @@ fn chunk_loop(
                 );
                 progress.committed = start + chunk.keep_to;
                 progress.chunks += 1;
+                progress.reading = None; // it was read before this cut
                 // Preview again on the next tick: the text on screen was
                 // read before this cut existed.
                 preview_due = Instant::now();
@@ -526,6 +549,7 @@ fn finish_recording(app: &AppHandle, generation: u64, tx: &mpsc::Sender<Msg>) ->
         app.state::<AppState>().flush_rtf();
     };
 
+    let t_stop = Instant::now();
     let samples = match state.recorder.stop() {
         Ok(s) => s,
         Err(e) => {
@@ -568,9 +592,12 @@ fn finish_recording(app: &AppHandle, generation: u64, tx: &mpsc::Sender<Msg>) ->
     // What the chunker already transcribed while the user was talking; this
     // waits out a chunk pass still in flight (that audio has to be
     // transcribed either way). Only the tail after it is left to do.
+    let recorder_time = t_stop.elapsed();
+    let t_wait = Instant::now();
     let chunked = chunk_session
         .map(crate::state::ChunkSession::finish)
         .unwrap_or_default();
+    let wait_time = t_wait.elapsed();
     let committed = chunked.committed.min(samples.len());
     let audio_secs = (samples.len() - committed) as f32 / 16_000.0;
     log::info!(
@@ -595,8 +622,17 @@ fn finish_recording(app: &AppHandle, generation: u64, tx: &mpsc::Sender<Msg>) ->
             }
         });
     }
-    let result =
-        transcribe_tail(app, &samples, chunked).and_then(|raw| clean_and_enhance(app, &raw));
+    let t_tail = Instant::now();
+    let raw = transcribe_tail(app, &samples, chunked);
+    let tail_time = t_tail.elapsed();
+    let t_clean = Instant::now();
+    let result = raw.and_then(|raw| clean_and_enhance(app, &raw));
+    // Where the wait between the stop hotkey and the paste goes.
+    log::info!(
+        "stop: recorder {recorder_time:?}, pass in flight {wait_time:?}, tail {tail_time:?}, \
+         cleanup {:?}",
+        t_clean.elapsed()
+    );
     ticking.store(false, std::sync::atomic::Ordering::Relaxed);
 
     match result {
@@ -637,9 +673,14 @@ fn finish_recording(app: &AppHandle, generation: u64, tx: &mpsc::Sender<Msg>) ->
                 current.as_ref(),
             ) {
                 crate::focus::GuardDecision::Deliver => {
+                    let t_deliver = Instant::now();
                     deliver_text(app, &text, false);
                     overlay::hide(app);
-                    log::info!("stop -> delivered in {:?}", t0.elapsed());
+                    log::info!(
+                        "stop -> delivered in {:?} (delivery {:?})",
+                        t0.elapsed(),
+                        t_deliver.elapsed()
+                    );
                 }
                 crate::focus::GuardDecision::Ask => {
                     // decide() only Asks when both reads were Some.
@@ -709,11 +750,27 @@ fn transcribe_tail(
 ) -> anyhow::Result<String> {
     let state = app.state::<AppState>();
     let committed = chunked.committed.min(samples.len());
+    // A reading taken while recording already is the tail if nothing was
+    // said after it: no pass at all is left to run.
+    let reading = chunked
+        .reading
+        .filter(|r| crate::chunking::reading_covers(samples, committed, r));
+    if let Some(reading) = &reading {
+        log::info!(
+            "stop: reusing the reading taken {:.2}s before the end; no pass needed",
+            (samples.len() - reading.end) as f32 / 16_000.0
+        );
+    }
     if committed == 0 {
-        return state.transcribe(app, samples);
+        return match reading {
+            Some(reading) => Ok(crate::chunking::words_text(&reading.words)),
+            None => state.transcribe(app, samples),
+        };
     }
     let mut transcript = chunked.words;
-    if committed < samples.len() {
+    if let Some(reading) = reading {
+        crate::chunking::stitch(&mut transcript, reading.words, committed as f32 / 16_000.0);
+    } else if committed < samples.len() {
         // Like every chunk, the tail goes to the engine with the audio just
         // before its cut as context, and is stitched onto what came before.
         let start = crate::chunking::context_start(committed);

@@ -146,6 +146,67 @@ pub fn context_start(committed: usize) -> usize {
     committed.saturating_sub((CONTEXT_BEFORE_SECS * RATE as f32) as usize)
 }
 
+/// A reading of the audio not yet committed, taken while the user was still
+/// recording: a live preview pass, or a pass run in a pause. If nothing was
+/// said after it, the stop path uses it as the tail instead of transcribing
+/// that audio again ([`reading_covers`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TailReading {
+    /// The cut in force when the reading was taken. A later cut voids it.
+    pub committed: usize,
+    /// Sample index (absolute) the reading's audio ran to.
+    pub end: usize,
+    /// What it heard, in absolute recording time — context before the cut
+    /// included, exactly what a tail pass hands to [`stitch`].
+    pub words: Vec<Word>,
+}
+
+/// A reading must have ended at least this far into a pause to be trusted
+/// with the last word: the engine saw the word finish, with silence after it.
+const READING_GUARD_MS: usize = 200;
+/// Loud frames tolerated in audio that otherwise counts as quiet: the
+/// click of the stop key, not a word (3 frames = 60 ms).
+const BLIP_FRAMES: usize = 3;
+/// With live previews off, a pause this long triggers a reading of the
+/// uncommitted audio, in case the user is about to stop.
+pub const SPECULATE_PAUSE_MS: usize = 300;
+
+/// Whether `window` holds no speech from sample `from` on. `window` is the
+/// audio from [`context_start`] of the last cut — it sets what "loud" means,
+/// by the same rule as [`find_cut`]. A few loud frames are let through
+/// ([`BLIP_FRAMES`]).
+pub fn quiet_from(window: &[f32], from: usize) -> bool {
+    let rms = frame_rms(window);
+    if rms.is_empty() {
+        return false;
+    }
+    let mut sorted = rms.clone();
+    sorted.sort_by(|a, b| a.total_cmp(b));
+    let loud = sorted[(sorted.len() * 95 / 100).min(sorted.len() - 1)];
+    let threshold = (loud * SILENCE_RATIO).max(SILENCE_FLOOR);
+    let first = (from / FRAME).min(rms.len());
+    rms[first..].iter().filter(|&&r| r >= threshold).count() <= BLIP_FRAMES
+}
+
+/// Whether `reading` already says everything in the recording: nothing was
+/// spoken from shortly before it ended ([`READING_GUARD_MS`]) to the end of
+/// `samples`, and no cut was taken since.
+pub fn reading_covers(samples: &[f32], committed: usize, reading: &TailReading) -> bool {
+    if reading.committed != committed || reading.end > samples.len() {
+        return false;
+    }
+    let start = context_start(committed).min(samples.len());
+    let guard = READING_GUARD_MS * RATE / 1000;
+    quiet_from(&samples[start..], reading.end.saturating_sub(guard).saturating_sub(start))
+}
+
+/// Whether the audio so far ends in a pause long enough to be worth a
+/// speculative reading ([`SPECULATE_PAUSE_MS`]).
+pub fn ends_in_pause(window: &[f32]) -> bool {
+    let pause = SPECULATE_PAUSE_MS * RATE / 1000;
+    window.len() > pause && quiet_from(window, window.len() - pause)
+}
+
 /// One chunk ready to transcribe, as sample indices into the buffer given to
 /// [`next_chunk`]: hand the engine `[..end]`, keep the words inside
 /// `[keep_from..keep_to]`. `keep_to` is the new cut.
@@ -437,6 +498,57 @@ mod tests {
 
     fn secs(samples: usize) -> f32 {
         samples as f32 / RATE as f32
+    }
+
+    // R46: when a reading taken while recording may stand in for the tail.
+    #[test]
+    fn r46_reading_covers_only_when_nothing_was_said_after_it() {
+        let at = |secs: f32| (secs * RATE as f32) as usize;
+        let reading = |committed: usize, end: f32| TailReading {
+            committed,
+            end: at(end),
+            words: Vec::new(),
+        };
+        // 3 s of speech, then the user falls silent and stops 1 s later.
+        let audio = cat(&[speech(3.0), silence(1.0)]);
+        // Read 0.5 s into the pause: it heard everything.
+        assert!(reading_covers(&audio, 0, &reading(0, 3.5)));
+        // Read only 0.1 s into the pause: the last word may be cut short.
+        assert!(!reading_covers(&audio, 0, &reading(0, 3.1)));
+        // Read while still speaking.
+        assert!(!reading_covers(&audio, 0, &reading(0, 2.5)));
+
+        // More speech after the reading: it is stale.
+        let more = cat(&[speech(3.0), silence(1.0), speech(0.5), silence(0.3)]);
+        assert!(!reading_covers(&more, 0, &reading(0, 3.5)));
+
+        // The click of the stop key (40 ms) is not speech…
+        let click = cat(&[speech(3.0), silence(0.8), speech(0.04), silence(0.1)]);
+        assert!(reading_covers(&click, 0, &reading(0, 3.5)));
+        // …but a short word (200 ms) is.
+        let word = cat(&[speech(3.0), silence(0.8), speech(0.2), silence(0.1)]);
+        assert!(!reading_covers(&word, 0, &reading(0, 3.5)));
+
+        // A cut taken after the reading voids it, as does a reading that
+        // claims more audio than was recorded.
+        assert!(!reading_covers(&audio, at(1.0), &reading(0, 3.5)));
+        assert!(!reading_covers(&audio, 0, &reading(0, 9.0)));
+
+        // After a cut, "loud" is judged on the audio since the cut's context.
+        let long = cat(&[speech(8.0), silence(0.6), speech(3.0), silence(1.0)]);
+        assert!(reading_covers(&long, at(8.3), &reading(at(8.3), 12.1)));
+        assert!(!reading_covers(&long, at(8.3), &reading(at(8.3), 11.0)));
+    }
+
+    // R47: when a pause is worth a speculative reading (live previews off).
+    #[test]
+    fn r47_a_pause_at_the_end_triggers_a_reading() {
+        assert!(!ends_in_pause(&speech(3.0)), "still speaking");
+        assert!(!ends_in_pause(&cat(&[speech(3.0), silence(0.2)])), "a breath, not a pause");
+        assert!(ends_in_pause(&cat(&[speech(3.0), silence(0.4)])));
+        assert!(!ends_in_pause(&silence(0.2)), "too little audio to judge");
+        // Speech resumed: wait for the next pause.
+        assert!(!ends_in_pause(&cat(&[speech(3.0), silence(0.4), speech(0.5)])));
     }
 
     // R28: the pause rules — where a chunk is cut, and when it is not.
