@@ -15,6 +15,8 @@ const PRESS_DEBOUNCE: Duration = Duration::from_millis(30);
 const FOCUS_PROMPT_TIMEOUT_SECS: u64 = 10;
 /// How often the chunker looks for a pause to cut at (chunking.rs).
 const CHUNK_POLL: Duration = Duration::from_millis(250);
+/// How often a recording is checked for its length cap and a long silence.
+const WATCH_POLL: Duration = Duration::from_secs(1);
 
 #[derive(Debug)]
 enum Msg {
@@ -22,7 +24,9 @@ enum Msg {
     Toggle,
     Cancel,
     Retry,
-    AutoStop { generation: u64 },
+    /// The dictation ended by itself: the length cap (`trim_to` None), or a
+    /// long silence — then `trim_to` is where the recording's sound ends.
+    AutoStop { generation: u64, trim_to: Option<usize> },
     FocusResolve { action: FocusAction },
     FocusTimeout { generation: u64 },
 }
@@ -125,7 +129,7 @@ fn run(app: AppHandle, rx: mpsc::Receiver<Msg>, tx: mpsc::Sender<Msg>) {
                             }
                         }
                         (Stage::Recording, false) => {
-                            stage = finish_recording(&app, generation, &tx);
+                            stage = finish_recording(&app, generation, &tx, None);
                         }
                         _ => {}
                     }
@@ -137,7 +141,7 @@ fn run(app: AppHandle, rx: mpsc::Receiver<Msg>, tx: mpsc::Sender<Msg>) {
                             }
                         }
                         Stage::Recording => {
-                            stage = finish_recording(&app, generation, &tx);
+                            stage = finish_recording(&app, generation, &tx, None);
                         }
                         Stage::AwaitFocusConfirm => unreachable!("handled above"),
                     }
@@ -150,7 +154,7 @@ fn run(app: AppHandle, rx: mpsc::Receiver<Msg>, tx: mpsc::Sender<Msg>) {
                     }
                 }
                 Stage::Recording => {
-                    stage = finish_recording(&app, generation, &tx);
+                    stage = finish_recording(&app, generation, &tx, None);
                 }
                 Stage::AwaitFocusConfirm => {
                     // A new dictation preempts the prompt like the timeout
@@ -162,10 +166,16 @@ fn run(app: AppHandle, rx: mpsc::Receiver<Msg>, tx: mpsc::Sender<Msg>) {
                     }
                 }
             },
-            Msg::AutoStop { generation: g } => {
+            Msg::AutoStop { generation: g, trim_to } => {
                 if stage == Stage::Recording && g == generation {
-                    log::warn!("5-minute safety cap reached; stopping dictation");
-                    stage = finish_recording(&app, generation, &tx);
+                    match trim_to {
+                        Some(_) => log::info!(
+                            "nothing said for {}s; stopping dictation",
+                            crate::chunking::AUTO_STOP_SILENCE_SECS
+                        ),
+                        None => log::warn!("length cap reached; stopping dictation"),
+                    }
+                    stage = finish_recording(&app, generation, &tx, trim_to);
                 }
             }
             Msg::Cancel => match stage {
@@ -335,17 +345,51 @@ fn start_recording(app: &AppHandle, generation: &mut u64, tx: &mpsc::Sender<Msg>
         });
     }
 
-    // 5-minute safety cap watchdog (SPEC FR-1.4).
+    // Watchdog: ends the dictation at its length cap (SPEC FR-1.4), or
+    // once nothing has been said for a long while.
     *generation += 1;
     let g = *generation;
-    let tx = tx.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_secs(audio::MAX_RECORD_SECS));
-        let _ = tx.send(Msg::AutoStop { generation: g });
-    });
+    state
+        .recording_generation
+        .store(g, std::sync::atomic::Ordering::SeqCst);
+    let (tx, app_watch) = (tx.clone(), app.clone());
+    let cap = Duration::from_secs(audio::max_record_secs(parakeet));
+    std::thread::Builder::new()
+        .name("recording-watch".into())
+        .spawn(move || watch_recording(app_watch, g, cap, tx))
+        .expect("spawn recording watch");
 
     log::info!("hotkey -> recording started in {:?}", t0.elapsed());
     true
+}
+
+/// Watch one dictation until it ends: send `AutoStop` at the length cap, or
+/// when it has gone silent (chunking::SilenceWatch). Exits by itself once
+/// the dictation is over, however it ended.
+fn watch_recording(app: AppHandle, generation: u64, cap: Duration, tx: mpsc::Sender<Msg>) {
+    let started = Instant::now();
+    let mut watch = crate::chunking::SilenceWatch::default();
+    loop {
+        std::thread::sleep(WATCH_POLL);
+        let state = app.state::<AppState>();
+        if state
+            .recording_generation
+            .load(std::sync::atomic::Ordering::SeqCst)
+            != generation
+        {
+            return; // a later dictation is recording
+        }
+        // Only the audio since the last look is copied.
+        let Some(fresh) = state.recorder.snapshot_from_16k(watch.len()) else {
+            return; // stopped or cancelled
+        };
+        watch.push(&fresh);
+        let trim_to = watch.silent_tail();
+        if trim_to.is_some() || started.elapsed() >= cap {
+            let _ = tx.send(Msg::AutoStop { generation, trim_to });
+            return;
+        }
+    }
 }
 
 /// Periodic live passes while recording (SPEC3 FR-L2). Degrades gracefully:
@@ -523,7 +567,16 @@ fn chunk_loop(
 /// Stop, transcribe, and deliver — or hand off to the focus-guard prompt.
 /// Returns the pipeline's next stage (Idle, or AwaitFocusConfirm when the
 /// prompt is showing).
-fn finish_recording(app: &AppHandle, generation: u64, tx: &mpsc::Sender<Msg>) -> Stage {
+///
+/// `trim_to`: the dictation stopped by itself on a long silence, and the
+/// recording's sound ends at this sample — the silence after it is dropped
+/// rather than transcribed or kept for Retry.
+fn finish_recording(
+    app: &AppHandle,
+    generation: u64,
+    tx: &mpsc::Sender<Msg>,
+    trim_to: Option<usize>,
+) -> Stage {
     let t0 = Instant::now();
     let state = app.state::<AppState>();
     // FIRST: tell any in-flight live loop the stop path owns the engine now
@@ -551,7 +604,13 @@ fn finish_recording(app: &AppHandle, generation: u64, tx: &mpsc::Sender<Msg>) ->
 
     let t_stop = Instant::now();
     let samples = match state.recorder.stop() {
-        Ok(s) => s,
+        Ok(mut s) => {
+            if let Some(trim_to) = trim_to {
+                // Never below the recorder's own floor for a short recording.
+                s.truncate(trim_to.max(audio::MIN_SAMPLES));
+            }
+            s
+        }
         Err(e) => {
             log::error!("stopping recorder: {e}");
             overlay::hide(app);

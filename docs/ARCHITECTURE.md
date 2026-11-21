@@ -660,10 +660,49 @@ With live previews off this adds work while recording: one pass over the
 uncommitted audio per pause (replay: 10 passes, 3.4 s of compute, over a
 35 s recording). Tests: R46, R47.
 
+## Longer dictations and stopping on silence (post-SPEC16)
+
+Diverges from SPEC FR-1.4 (auto-stop at 5 minutes).
+
+- **Length cap: 15 minutes on Parakeet, 5 on Whisper**
+  (`audio::max_record_secs`). The 5-minute cap dates from when the whole
+  recording was transcribed after stop. Parakeet dictations are now
+  transcribed in chunks while recording, so the wait at stop no longer
+  grows with length; what does grow is memory, about 4 MB per minute of
+  audio. Whisper still transcribes everything at stop and keeps 5 minutes.
+  The recorder's own backstop (`audio::MAX_RECORD_SECS`) is the 15-minute
+  value for every engine.
+- **Stop on silence: 30 seconds** (`chunking::AUTO_STOP_SILENCE_SECS`). A
+  dictation with nothing said for that long stops by itself and delivers
+  what it has, so a forgotten recording does not hold the microphone open
+  until the cap. The recording is trimmed to one second after its last
+  sound before it is transcribed or kept for Retry.
+
+One `recording-watch` thread per dictation does both (`pipeline.rs::
+watch_recording`): once a second it copies the audio captured since its
+last look into a `chunking::SilenceWatch` (one energy value per 20 ms
+frame) and sends `AutoStop` on either condition. It exits when its
+dictation ends, replacing the old thread that slept out the whole cap.
+
+"Loud" is the 95th-percentile frame energy of the audio *before* the silent
+stretch, and silence is anything under 15% of it (the rule `find_cut` uses).
+Consequences, by design on the side of not stopping:
+
+- Steady background sound under speech counts as silence.
+- A recording in which nobody has spoken yet never stops on silence unless
+  it is near digital silence: with nothing louder to compare against, the
+  noise may be the speaker. The length cap covers it.
+- Sound above 15% of the speech level in the stretch (typing, a voice in the
+  room) keeps the dictation open; up to 60 ms of it is ignored.
+
+Not measured on real recordings: both conditions are covered by unit tests
+on synthetic audio only (R48, R49), and no dictation longer than 5 minutes
+has been run through the app.
+
 ## Design notes
 
 - **One pipeline thread** serializes Idle→Recording→Processing, so double
-  hotkey presses, Esc, menu clicks, and the 5-minute watchdog can't race.
+  hotkey presses, Esc, menu clicks, and the recording watchdog can't race.
 - **The overlay never takes focus**: NSPanel with `nonactivating_panel` +
   `can_become_key_window: false`; levels are throttled and skipped entirely
   while hidden (hidden WebKit views still pay for every event).
